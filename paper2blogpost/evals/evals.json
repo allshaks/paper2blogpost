@@ -1,0 +1,65 @@
+{
+  "skill_name": "paper2blogpost",
+  "evals": [
+    {
+      "id": 0,
+      "name": "neuro-friendly-blogpost",
+      "prompt": "Turn this paper into a friendly blog post \u2014 nice to read, but don't cut any of the actual content.",
+      "expected_output": "A self-contained HTML blog-post folder: every figure from the paper reproduced unchanged with a colloquialized caption, every reference preserved and given a hover popup with a 'What is it about?' button, sections rewritten in natural conversational language, a translucent table-of-contents sidebar, smooth navigation, and rendered math. No scientific content dropped.",
+      "files": [
+        "Lad et al. - 2026 - Letting the neural code speak Automated characterization of monkey visual neurons through human lan.pdf"
+      ],
+      "assertions": [
+        "All 7 figures from the paper are reproduced as <img> in the post and every referenced figure file exists on disk (no broken images).",
+        "Both tables are rebuilt as real HTML <table> elements rather than screenshots.",
+        "Every in-text citation marker (a.cite[data-ref]) resolves to a reference-popup entry that has a non-empty colloquial summary.",
+        "Reference popups also include a 'relevance to this paper' note, and each summary is at most ~3 sentences (per spec).",
+        "The bibliography is essentially complete: at least 86 reference entries listed (source has ~96).",
+        "A translucent table-of-contents sidebar (#toc) is present with at least one link per section.",
+        "Equations are kept as real rendered math (MathJax loaded and math delimiters present in the content).",
+        "Evidence of section-by-section translation: the post contains 5 or more distinct content <section> blocks (excluding references).",
+        "The output is a self-contained openable folder: index.html exists with a figures/ subfolder."
+      ]
+    },
+    {
+      "id": 1,
+      "name": "neuro-colloquial-register",
+      "prompt": "Rewrite this paper as a colloquial web version: drop the stiff academic tone, but keep every figure, equation, and reference. Make it pleasant to read and navigate.",
+      "expected_output": "Same paper rendered as a blog post that clearly shifts the register from formal-academic to natural-conversational while keeping ALL depth, figures, equations, and references. Tests that the skill changes language, not reading level.",
+      "files": [
+        "Lad et al. - 2026 - Letting the neural code speak Automated characterization of monkey visual neurons through human lan.pdf"
+      ],
+      "assertions": [
+        "All 7 figures from the paper are reproduced as <img> in the post and every referenced figure file exists on disk (no broken images).",
+        "Both tables are rebuilt as real HTML <table> elements rather than screenshots.",
+        "Every in-text citation marker (a.cite[data-ref]) resolves to a reference-popup entry that has a non-empty colloquial summary.",
+        "Reference popups also include a 'relevance to this paper' note, and each summary is at most ~3 sentences (per spec).",
+        "The bibliography is essentially complete: at least 86 reference entries listed (source has ~96).",
+        "A translucent table-of-contents sidebar (#toc) is present with at least one link per section.",
+        "Equations are kept as real rendered math (MathJax loaded and math delimiters present in the content).",
+        "Evidence of section-by-section translation: the post contains 5 or more distinct content <section> blocks (excluding references).",
+        "The output is a self-contained openable folder: index.html exists with a figures/ subfolder."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "attention-colorful-blogpost",
+      "prompt": "Convert this arXiv paper into a colorful, easy-to-read blog post webpage.",
+      "expected_output": "The Transformer paper as a blog post: the architecture diagram and other figures reproduced exactly, tables rebuilt as clean HTML, every citation preserved with popups, equations rendered, and a pleasant navigable design. Tests generalization to a different field/format.",
+      "files": [
+        "smoketest/attention.pdf"
+      ],
+      "assertions": [
+        "All 5 figures (incl. the Transformer architecture diagram) are reproduced as <img>, every referenced figure file exists on disk (no broken images).",
+        "The 4 tables are rebuilt as real HTML <table> elements rather than screenshots.",
+        "Every in-text citation marker (a.cite[data-ref]) resolves to a reference-popup entry with a non-empty colloquial summary.",
+        "Reference popups also include a 'relevance to this paper' note, and each summary is at most ~3 sentences (per spec).",
+        "The bibliography is complete: at least 38 reference entries listed (source has 40).",
+        "A translucent table-of-contents sidebar (#toc) is present with at least one link per section.",
+        "Equations are kept as real rendered math (MathJax loaded and math delimiters present).",
+        "Evidence of section-by-section translation: 5 or more distinct content <section> blocks (excluding references).",
+        "The output is a self-contained openable folder: index.html exists with a figures/ subfolder."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# OS / editor junk
+.DS_Store
+**/.DS_Store
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Local agent memory / scratch buffers
+.remember/
+
+# Large source material — kept out of git history
+*.pdf
+
+# Dev & eval scaffolding — not part of the shippable skill
+/paper2blogpost-workspace/
+/attndiag/
+/figdiag/
+/figfresh/
+/paper_build/
+/smoketest/
+/serve_smoketest.py
