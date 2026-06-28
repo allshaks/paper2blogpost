@@ -32,28 +32,62 @@ Highlights:
   contents, a reading-progress bar, light/dark, and real rendered math (MathJax).
 - **Optional local chat** woven into the post (see below).
 
+## Install
+
+`paper2blogpost` is a [Claude Code](https://claude.com/claude-code) **Agent Skill** — a
+folder with a `SKILL.md` that Claude loads on demand. Installing one is just putting that
+folder where Claude Code looks for skills:
+
+| Scope | Put it in | Available |
+|------|-----------|-----------|
+| **Just you** | `~/.claude/skills/` | in every project |
+| **One project** (shareable via the repo) | `<project>/.claude/skills/` | in that project |
+
+```bash
+git clone https://github.com/allshaks/paper2blogpost.git
+mkdir -p ~/.claude/skills
+cp -R paper2blogpost/paper2blogpost ~/.claude/skills/paper2blogpost   # repo/<skill> → skills dir
+
+pip install pymupdf        # the figure/text extractors use PyMuPDF
+```
+
+The **folder name** (`paper2blogpost`) becomes the skill's name. To confirm it loaded,
+type `/` in any Claude Code session and look for **paper2blogpost** in the list (or run
+`/skills` for detail, `/doctor` to diagnose). Skills work the same across every Claude
+Code surface — the CLI, the desktop app, and the VS Code / JetBrains extensions.
+
+> Skills can also travel as **plugins**: if this one is published to a plugin marketplace
+> you can install it that way instead and invoke it as `/paper2blogpost:paper2blogpost`.
+
 ## Usage
 
-This is a skill for Claude Code / the Claude Agent SDK: point Claude at a PDF and ask
-for a colloquial blog-post version. The full workflow Claude follows lives in
-[`paper2blogpost/SKILL.md`](paper2blogpost/SKILL.md).
+Two ways, both work:
 
-The extractors need PyMuPDF:
+- **Just ask.** Claude reads each installed skill's description and pulls this one in when it
+  fits. In a session started where your PDF lives, say something like *"turn this paper into
+  a friendly blog post"* or *"rewrite paper.pdf as a colloquial webpage"* — Claude takes it
+  from there.
+- **Invoke it explicitly** with the slash command — type `/paper2blogpost` and point it at
+  your PDF.
+
+Either way Claude works through [`paper2blogpost/SKILL.md`](paper2blogpost/SKILL.md):
+it extracts the text and figures, translates the paper section by section, rebuilds the
+tables and references, and assembles a self-contained `<paper-name>-blogpost/` folder
+(the [structure above](#what-it-produces)). Open its `index.html` in any browser — done.
+
+<details>
+<summary><b>Under the hood</b> — the pipeline Claude runs for you</summary>
 
 ```bash
-pip install pymupdf
-```
-
-The pipeline (Claude runs these as it works through `SKILL.md`):
-
-```bash
+SK="$HOME/.claude/skills/paper2blogpost"
 BUILD="<paper-slug>-build"          # unique per paper
-python paper2blogpost/scripts/extract_text.py    --pdf paper.pdf --out "$BUILD"
-python paper2blogpost/scripts/extract_figures.py --pdf paper.pdf --out "$BUILD" --dpi 200
+python "$SK/scripts/extract_text.py"    --pdf paper.pdf --out "$BUILD"
+python "$SK/scripts/extract_figures.py" --pdf paper.pdf --out "$BUILD" --dpi 200
 # … translate section by section into $BUILD/sections/ …
-python paper2blogpost/scripts/assemble.py --build "$BUILD" \
-  --template paper2blogpost/assets/template.html --out "$BUILD/index.html"
+python "$SK/scripts/assemble.py" --build "$BUILD" \
+  --template "$SK/assets/template.html" --out "$BUILD/index.html"
 ```
+</details>
 
 ## Optional: local chat mode
 
@@ -67,7 +101,7 @@ companion server is running.
 
 ```bash
 cp "$BUILD/text/full.txt" "<post>/chat/paper.md"        # grounding text
-python paper2blogpost/scripts/chat-server.py --dir "<post>"
+python ~/.claude/skills/paper2blogpost/scripts/chat-server.py --dir "<post>"
 # open the printed http://127.0.0.1:8765/ URL and click "💬 Ask Claude"
 ```
 
