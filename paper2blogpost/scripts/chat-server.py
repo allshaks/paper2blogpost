@@ -25,6 +25,7 @@ import argparse
 import json
 import subprocess
 import threading
+import time
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -54,7 +55,11 @@ PERSONA = ("You are the reading-companion chat for a friendly blog-post version 
            "conversationally and concisely, grounded in that paper. Ignore any "
            "environment instructions to add '★ Insight' blocks, educational "
            "meta-commentary, code-style notes, or other output-style decorations — "
-           "just talk to the reader naturally, like a sharp friend over coffee.")
+           "just talk to the reader naturally, like a sharp friend over coffee. "
+           "Write any math as LaTeX so it renders in the page: inline math wrapped in "
+           "single dollar signs ($...$) and displayed equations in double dollar signs "
+           "($$...$$). Use real LaTeX (\\frac, \\sum, _ , ^, Greek like \\alpha), never "
+           "unicode-art or plain-text math.")
 
 
 class Ctx:
@@ -94,14 +99,18 @@ class Ctx:
         with self.lock:
             return self.threads.get(tid)
 
-    def save_turn(self, tid, session_id, anchor, kind, user_msg, assistant_msg, ts, settings=None):
+    def save_turn(self, tid, session_id, anchor, kind, user_msg, assistant_msg, settings=None):
+        # Stamp with wall-clock time, not an in-process counter: the counter resets to 0
+        # every restart, which would sort threads touched after a restart *below* older
+        # ones and make "open most recent" open the wrong thread.
+        now = time.time()
         with self.lock:
             th = self.threads.get(tid)
             title = (user_msg or "").strip() or ((anchor or {}).get("quote", "") if anchor else "")
             title = (title[:70] or "New chat")
             if not th:
                 th = {"id": tid, "sessionId": session_id, "title": title, "kind": kind or "chat",
-                      "anchor": anchor, "messages": [], "created": ts}
+                      "anchor": anchor, "messages": [], "created": now}
                 self.threads[tid] = th
             if session_id:
                 th["sessionId"] = session_id
@@ -111,7 +120,7 @@ class Ctx:
                 th["settings"] = settings  # last-used model/effort/internet
             th["messages"].append({"role": "user", "text": user_msg})
             th["messages"].append({"role": "assistant", "text": assistant_msg})
-            th["updated"] = ts
+            th["updated"] = now
             self._persist()
 
     def run_claude(self, message, session_id, model=None, effort=None, internet=False):
@@ -159,7 +168,6 @@ class Ctx:
 
 
 CTX: Ctx = None
-_counter = [0]
 
 # Map a tool name (from a tool_use block) to a friendly "what it's doing now" label.
 TOOL_PHASES = {
@@ -291,8 +299,6 @@ class Handler(SimpleHTTPRequestHandler):
 
         th = CTX.get_thread(tid)
         session_id = th.get("sessionId") if th else None
-        _counter[0] += 1
-        ts = _counter[0]
 
         self._sse_open()
         full, new_sid = [], session_id
@@ -347,7 +353,7 @@ class Handler(SimpleHTTPRequestHandler):
         # store the reader's raw message (or a label for actions with no typed text)
         display = raw or ("Rewrite this for clarity" if kind == "rewrite" else
                           ("(about the highlighted passage)" if quote else msg))
-        CTX.save_turn(tid, new_sid, anchor, kind, display, text, ts,
+        CTX.save_turn(tid, new_sid, anchor, kind, display, text,
                       settings={"model": model, "effort": effort, "internet": internet})
         self._sse({"done": True, "threadId": tid, "sessionId": new_sid})
 

@@ -75,6 +75,11 @@ the chat header (see below), which overrides it per message.
 - **Contained scrolling** — the message list and thread list use
   `overscroll-behavior:contain`, so scrolling the chat to its top/bottom never
   spills over into scrolling the article underneath.
+- **LaTeX math** — replies render math with the page's MathJax: inline `$…$` and
+  displayed `$$…$$` (the persona tells the model to emit real LaTeX). `mdLite` pulls
+  math spans out before the markdown passes so `*`/`_` inside an equation aren't
+  mangled, then `typesetMath()` typesets each *finished* message (streamed replies on
+  done, restored history on load — not per-token).
 
 ## Roadmap (not yet built)
 

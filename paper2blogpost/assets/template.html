@@ -881,10 +881,30 @@ xpop.addEventListener('mouseleave', hideX);
 
   // ---- small helpers ----
   function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':s; return d.innerHTML; }
-  function mdLite(s){ s=esc(s);
+  // Render the bot's light markdown WITHOUT mangling LaTeX: pull math spans out first
+  // ($$…$$ / \[…\] / \(…\) / $…$), run markdown on the rest, then restore the math
+  // verbatim for MathJax. Everything is HTML-escaped (math included), so a stray `<`
+  // inside an equation can't break the markup — MathJax reads it back from the text.
+  function mdLite(s){
+    s=esc(s);
+    const math=[];
+    const stash=m=>{ math.push(m); return '@@M'+(math.length-1)+'@@'; };
+    s=s.replace(/\$\$([\s\S]+?)\$\$/g, stash);    // display  $$…$$
+    s=s.replace(/\\\[([\s\S]+?)\\\]/g, stash);    // display  \[…\]
+    s=s.replace(/\\\(([\s\S]+?)\\\)/g, stash);    // inline   \(…\)
+    s=s.replace(/\$([^$\n]+?)\$/g, stash);        // inline   $…$  (same line)
     s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
     s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
-    s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>'); return s; }
+    s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+    return s.replace(/@@M(\d+)@@/g,(_,i)=>math[+i]);
+  }
+  // Typeset the math in a freshly-rendered message using the page's MathJax (which may
+  // still be loading — wait on its startup promise if so).
+  function typesetMath(el){
+    const MJ=window.MathJax; if(!MJ||!el) return;
+    if(MJ.typesetPromise){ MJ.typesetPromise([el]).catch(()=>{}); }
+    else if(MJ.startup&&MJ.startup.promise){ MJ.startup.promise.then(()=>{ if(MJ.typesetPromise) MJ.typesetPromise([el]).catch(()=>{}); }); }
+  }
   function newId(){ return 't'+Math.random().toString(36).slice(2,9)+Date.now().toString(36); }
   function clearMsgs(empty){ msgs.innerHTML = empty
     ? '<div class="empty">Ask me anything about the paper, or select any passage to ask about it or have it rewritten.</div>' : ''; }
@@ -892,7 +912,8 @@ xpop.addEventListener('mouseleave', hideX);
     const e=msgs.querySelector('.empty'); if(e) e.remove();
     const el=document.createElement('div');
     el.className='msg '+(role==='user'?'user':'bot');
-    if(role==='user') el.textContent=text||''; else el.innerHTML=mdLite(text||'');
+    if(role==='user'){ el.textContent=text||''; }
+    else { el.innerHTML=mdLite(text||''); if(text) typesetMath(el); }   // render math in restored history
     msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight; return el;
   }
 
@@ -1081,6 +1102,7 @@ xpop.addEventListener('mouseleave', hideX);
       }
       status.remove();
       if(!acc && !(bot && bot.textContent.startsWith('⚠'))){ ensureBot(); bot.textContent='(no response)'; }
+      if(bot) typesetMath(bot);   // typeset the finished reply once (not per-token)
     }catch(err){
       status.remove(); ensureBot(); bot.textContent='⚠ '+(err.message||'connection lost');
     }finally{

@@ -69,6 +69,17 @@ post but hidden unless the server answers `/__chat/ping`. See `references/chat-m
   clears when answer tokens begin. Verified end-to-end against a real web-search run.
 - **Contained chat scrolling** (2026-06-28): `overscroll-behavior:contain` on the message
   and thread lists, so reaching the chat's top/bottom no longer scroll-chains the article.
+- **LaTeX math in chat** (2026-06-28): replies render with MathJax — inline `$…$` and
+  displayed `$$…$$` (the persona instructs the model to emit real LaTeX). `mdLite` protects
+  math spans from the markdown passes; `typesetMath()` typesets each finished message
+  (streamed-on-done + restored-from-history). Verified both paths render in the browser.
+- **Masked API-key dialog** (2026-06-28): the 🔑 Key control no longer uses a plaintext
+  `prompt()` — it's a `type=password` modal with a 👁 reveal toggle (Save/Clear/Cancel,
+  Enter/Esc). The inline reference-popup key form was already masked.
+- **Restart-stable thread ordering** (2026-06-28): chat threads are now timestamped with
+  wall-clock `time.time()` in `save_turn` (the old in-process counter reset to 0 on every
+  restart, so "open most recent" could open an older thread). Verified: a touched thread
+  gets a real Unix timestamp and sorts to the top. Removed the now-dead `_counter`.
 
 **Phase 3 — polish (next).** Nicer thread switcher, delete-thread, multiple highlights per
 passage, an "apply this rewrite to the post" action.
