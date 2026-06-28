@@ -305,6 +305,10 @@ body.chat-resizing{cursor:ew-resize; user-select:none}
 #chat .msg.user{align-self:flex-end; background:var(--link); color:#fff; border-bottom-right-radius:5px}
 #chat .msg.bot{align-self:flex-start; background:var(--bg-tint); color:var(--ink); border-bottom-left-radius:5px}
 #chat .msg.bot.thinking{color:var(--ink-faint); font-style:italic}
+/* MathJax inside chat bubbles: the default display margin (1em) is too tall here, and a
+   wide equation should scroll rather than overflow the bubble */
+#chat .msg mjx-container[display="true"]{margin:.35em 0 !important}
+#chat .msg mjx-container{max-width:100%; overflow-x:auto; overflow-y:hidden}
 /* live "what the agent is doing" status pill (thinking / searching / reading…) */
 #chat .msg.status{align-self:flex-start; display:inline-flex; align-items:center; gap:8px;
   background:var(--bg-tint); color:var(--ink-soft); font-style:normal}
@@ -889,8 +893,10 @@ xpop.addEventListener('mouseleave', hideX);
     s=esc(s);
     const math=[];
     const stash=m=>{ math.push(m); return '@@M'+(math.length-1)+'@@'; };
-    s=s.replace(/\$\$([\s\S]+?)\$\$/g, stash);    // display  $$…$$
-    s=s.replace(/\\\[([\s\S]+?)\\\]/g, stash);    // display  \[…\]
+    // display math: also swallow blank lines hugging it — the equation is a block, so
+    // those newlines (kept by white-space:pre-wrap) would add a tall gap above/below.
+    s=s.replace(/\n*[^\S\n]*(\$\$[\s\S]+?\$\$)[^\S\n]*\n*/g, (_,eq)=>stash(eq));  // $$…$$
+    s=s.replace(/\n*[^\S\n]*(\\\[[\s\S]+?\\\])[^\S\n]*\n*/g, (_,eq)=>stash(eq));  // \[…\]
     s=s.replace(/\\\(([\s\S]+?)\\\)/g, stash);    // inline   \(…\)
     s=s.replace(/\$([^$\n]+?)\$/g, stash);        // inline   $…$  (same line)
     s=s.replace(/`([^`]+)`/g,'<code>$1</code>');

@@ -79,7 +79,11 @@ the chat header (see below), which overrides it per message.
   displayed `$$…$$` (the persona tells the model to emit real LaTeX). `mdLite` pulls
   math spans out before the markdown passes so `*`/`_` inside an equation aren't
   mangled, then `typesetMath()` typesets each *finished* message (streamed replies on
-  done, restored history on load — not per-token).
+  done, restored history on load — not per-token). Display equations are kept compact
+  in the bubble: `mdLite` strips the blank lines the model puts around `$$…$$` (which
+  `white-space:pre-wrap` would otherwise render as a tall gap) and the chat CSS trims
+  MathJax's default `1em` display margin to `.35em`; wide equations scroll
+  (`overflow-x:auto`) instead of overflowing.
 
 ## Roadmap (not yet built)
 
