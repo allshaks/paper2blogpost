@@ -50,11 +50,14 @@ the chat header (see below), which overrides it per message.
 ## In the chat UI
 
 - **Model + effort pickers** in the header (Haiku / Sonnet / Opus; low…max). Sent
-  per message; effort is dropped automatically for Haiku (which rejects it).
+  per message; effort is dropped automatically for Haiku (which rejects it). The
+  default is **Sonnet** / medium (the last-used choice is remembered in localStorage).
 - **🌐 Web toggle** — off runs a pure grounded chat (`--tools ""`, fast); on gives
   Claude `WebSearch`/`WebFetch` so it can look things up. Remembered in localStorage.
 - **Multiple chats** — `＋` starts a new thread; `☰` lists every chat opened in this
-  paper (with a `passage`/`rewrite` badge) to switch between them. Threads live in
+  paper (with a `passage`/`rewrite` badge) to switch between them, and a **← Back to
+  current chat** row returns you to the one you were in without picking another (the
+  list overlay covers the header, so this is the way back out). Threads live in
   `chat/threads.json`, each mapped to a resumable `claude` session.
 - **Select any passage** → a small bubble offers **Ask** (opens a thread seeded with
   that passage so your question has context) or **Rewrite for clarity** (Claude
@@ -62,7 +65,9 @@ the chat header (see below), which overrides it per message.
   `<mark class="q-highlight" data-thread="…">` that *stays* as a visible trace;
   clicking it reopens that exact thread. Highlights persist via a text-offset
   `anchor` ({quote, sectionId, start, length}) stored on the thread and re-applied
-  on load.
+  on load. A passage thread also shows a **backlink bar** at the top of the chat (the
+  quote + **Jump ↗**) that smooth-scrolls the article to the passage and flashes it —
+  so you can always get from the conversation back to the spot it's about.
 - **Live activity status** — while the agent works, a pill shows what it's doing
   right now (💭 Thinking · 🌐 Searching the web *"query"* · 📑 Reading the results ·
   📖 Reading · ⌘ Running a command · …), not just a spinner. The server taps

@@ -80,6 +80,13 @@ post but hidden unless the server answers `/__chat/ping`. See `references/chat-m
   wall-clock `time.time()` in `save_turn` (the old in-process counter reset to 0 on every
   restart, so "open most recent" could open an older thread). Verified: a touched thread
   gets a real Unix timestamp and sorts to the top. Removed the now-dead `_counter`.
+- **Passage backlink in chat** (2026-06-28): a passage-anchored thread shows a backlink bar
+  at the top of the chat (the quote + **Jump ↗**) that smooth-scrolls the article to the
+  passage and flashes it. Shown both for new select→Ask/Rewrite threads and passage threads
+  reopened from history. Verified: bar renders the quote; Jump centers + flashes the mark.
+- **History “← Back to current chat”** (2026-06-28): the thread-list overlay (which covers
+  the header) gains a back row so you can return to the chat you were in without having to
+  pick one. Default chat model set to **Sonnet** (was already the code default; documented).
 
 **Phase 3 — polish (next).** Nicer thread switcher, delete-thread, multiple highlights per
 passage, an "apply this rewrite to the post" action.

@@ -284,10 +284,25 @@ body.chat-resizing{cursor:ew-resize; user-select:none}
   cursor:pointer; background:var(--bg); color:var(--ink-faint); border:1px solid var(--rule);
   border-radius:999px; padding:5px 11px; transition:.15s}
 #chat .ctrls #chat-net.on{background:var(--link-soft); color:var(--link); border-color:var(--link)}
+/* backlink to the passage a chat is about (shown when the thread has an anchor) */
+#chat-anchor{display:none; align-items:center; gap:8px; cursor:pointer;
+  padding:9px 14px; border-bottom:1px solid var(--rule); background:var(--link-soft);
+  font-family:var(--sans); font-size:12.5px}
+#chat-anchor.show{display:flex}
+#chat-anchor:hover{filter:brightness(.98)}
+#chat-anchor .ja-ic{flex:none; color:var(--link); font-weight:700}
+#chat-anchor .ja-tx{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-style:italic; color:var(--ink-soft)}
+#chat-anchor .ja-go{flex:none; font-weight:600; color:var(--link)}
 /* thread list overlay */
 #chat-threads{position:absolute; inset:0; top:0; background:var(--surface); z-index:5;
   display:none; flex-direction:column; overflow-y:auto; overscroll-behavior:contain; padding:8px}
 #chat-threads.open{display:flex}
+#chat-threads .thread-back{font-family:var(--sans); font-weight:600; font-size:13px; color:var(--ink-soft);
+  cursor:pointer; padding:11px 14px; margin:2px 6px 8px; border-radius:10px; display:flex; align-items:center; gap:7px;
+  border-bottom:1px solid var(--rule)}
+#chat-threads .thread-back:hover{background:var(--bg-tint); color:var(--ink)}
+#chat-threads .thread-back .tb-ic{font-size:15px; line-height:1}
 #chat-threads .newrow{font-family:var(--sans); font-weight:600; font-size:14px; color:var(--link);
   cursor:pointer; padding:12px 14px; border-radius:10px; border:1px dashed var(--rule); margin:6px}
 #chat-threads .newrow:hover{background:var(--link-soft)}
@@ -406,6 +421,7 @@ mark.q-highlight:hover{filter:brightness(.97)}
     </select>
     <button id="chat-net" title="Toggle internet access for the chat">🌐 Web</button>
   </div>
+  <div id="chat-anchor" title="Jump to the passage this chat is about"></div>
   <div id="chat-threads"></div>
   <div class="msgs" id="chat-msgs">
     <div class="empty">Ask me anything about the paper — the gist of a section, what a result
@@ -819,6 +835,7 @@ xpop.addEventListener('mouseleave', hideX);
   const input  = document.getElementById('chat-input');
   const send   = document.getElementById('chat-send');
   const tlist  = document.getElementById('chat-threads');
+  const anchorBar = document.getElementById('chat-anchor');
   const bubble = document.getElementById('sel-bubble');
   const modelSel = document.getElementById('chat-model');
   const effortSel= document.getElementById('chat-effort');
@@ -932,15 +949,19 @@ xpop.addEventListener('mouseleave', hideX);
     if(anchor){ const e=msgs.querySelector('.empty');
       if(e) e.innerHTML='About this passage:<br><em>“'+esc(anchor.quote.slice(0,180))+(anchor.quote.length>180?'…':'')+'”</em>'; }
     input.placeholder = anchor ? 'Ask about this passage…' : 'Ask about the paper…';
+    showAnchorBar(anchor);
   }
   const newChat=()=>{ startThread(newId(), null); setTimeout(()=>input.focus(),50); };
   async function setActive(tid){
     const my=++loadTok;
-    cur=tid; pendingAnchor=null; tlist.classList.remove('open'); input.placeholder='Ask about the paper…'; clearMsgs(false);
+    cur=tid; pendingAnchor=null; tlist.classList.remove('open'); input.placeholder='Ask about the paper…';
+    hideAnchorBar(); clearMsgs(false);
     let t=null; try{ t=await fetch('/__chat/thread/'+tid).then(r=>r.json()); }catch{}
     if(my!==loadTok) return;  // a newer load superseded this one
     clearMsgs(false);
     if(t&&t.messages&&t.messages.length) t.messages.forEach(m=>addMsg(m.role, m.text)); else clearMsgs(true);
+    showAnchorBar(t && t.anchor);              // backlink if this is a passage thread
+    if(t && t.anchor) input.placeholder='Ask about this passage…';
     setTimeout(()=>input.focus(),50);
   }
   async function openRecentOrNew(){
@@ -951,6 +972,11 @@ xpop.addEventListener('mouseleave', hideX);
     if(tlist.classList.contains('open')){ tlist.classList.remove('open'); return; }
     let l=[]; try{ l=await fetch('/__chat/threads').then(r=>r.json()); }catch{}
     tlist.innerHTML='';
+    // back button — return to the chat you were in without having to pick one
+    const back=document.createElement('div'); back.className='thread-back';
+    back.innerHTML='<span class="tb-ic">←</span> Back to current chat';
+    back.onclick=()=>tlist.classList.remove('open');
+    tlist.appendChild(back);
     const nr=document.createElement('div'); nr.className='newrow'; nr.textContent='＋ New chat'; nr.onclick=newChat;
     tlist.appendChild(nr);
     l.forEach(t=>{ const row=document.createElement('div'); row.className='t';
@@ -994,21 +1020,43 @@ xpop.addEventListener('mouseleave', hideX);
       try{ r.surroundContents(m); }catch{}
     });
   }
-  function applyAnchor(a, tid){
-    const sec=a.sectionId&&document.getElementById(a.sectionId); if(!sec||a.start==null) return;
+  // Resolve a stored anchor back to a live Range in the article (or null if it drifted).
+  function rangeForAnchor(a){
+    const sec=a.sectionId&&document.getElementById(a.sectionId); if(!sec||a.start==null) return null;
     const nodes=[]; const w=document.createTreeWalker(sec, NodeFilter.SHOW_TEXT, null); let n; while(n=w.nextNode()) nodes.push(n);
     let rem=a.start, si=0, so=0, found=false;
     for(; si<nodes.length; si++){ const L=nodes[si].textContent.length; if(rem<=L){ so=rem; found=true; break; } rem-=L; }
-    if(!found) return;
+    if(!found) return null;
     const range=document.createRange(); range.setStart(nodes[si], so);
     let need=a.length, ei=si, eo=so;
     for(; ei<nodes.length; ei++){ const avail=nodes[ei].textContent.length-(ei===si?so:0);
       if(need<=avail){ eo=(ei===si?so:0)+need; need=0; break; } need-=avail; }
     if(need>0){ ei=nodes.length-1; eo=nodes[ei].textContent.length; }
     range.setEnd(nodes[ei], eo);
-    if(a.quote && range.toString().trim().slice(0,16)!==a.quote.trim().slice(0,16)) return; // offsets drifted
-    wrapRange(range, tid);
+    if(a.quote && range.toString().trim().slice(0,16)!==a.quote.trim().slice(0,16)) return null; // offsets drifted
+    return range;
   }
+  function applyAnchor(a, tid){ const range=rangeForAnchor(a); if(range) wrapRange(range, tid); }
+  function flashEl(el){ el.classList.remove('xref-flash'); void el.offsetWidth;
+    el.classList.add('xref-flash'); setTimeout(()=>el.classList.remove('xref-flash'), 1700); }
+  // Scroll the article to the passage this chat is about and flash it. Uses the persistent
+  // highlight if present; otherwise draws it (this chat *is* about that passage).
+  function jumpToPassage(anchor, tid){
+    if(!anchor) return;
+    let m=document.querySelector('mark.q-highlight[data-thread="'+tid+'"]');
+    if(!m){ applyAnchor(anchor, tid); m=document.querySelector('mark.q-highlight[data-thread="'+tid+'"]'); }
+    if(m){ m.scrollIntoView({behavior:'smooth', block:'center'}); flashEl(m); }
+  }
+  // The backlink bar at the top of the chat (shown only when the thread has a passage).
+  function showAnchorBar(anchor){
+    if(!anchor || !anchor.quote){ hideAnchorBar(); return; }
+    const tid=cur, q=anchor.quote.trim();
+    anchorBar.innerHTML='<span class="ja-ic">↩</span><span class="ja-tx">“'
+      +esc(q.slice(0,120))+(q.length>120?'…':'')+'”</span><span class="ja-go">Jump&nbsp;↗</span>';
+    anchorBar.onclick=()=>jumpToPassage(anchor, tid);
+    anchorBar.classList.add('show');
+  }
+  function hideAnchorBar(){ anchorBar.classList.remove('show'); anchorBar.onclick=null; anchorBar.innerHTML=''; }
   async function loadAnchors(){
     try{ const l=await fetch('/__chat/threads').then(r=>r.json());
       l.forEach(t=>{ if(t.anchor && t.anchor.sectionId) applyAnchor(t.anchor, t.id); }); }catch{}
