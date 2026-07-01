@@ -1,34 +1,46 @@
 #!/usr/bin/env python3
 """
-chat-server.py — local companion server that turns a paper2blogpost into something
-you can *think with*. It does two jobs:
+chat-server.py — ONE local companion server for ALL your paper2blogpost posts.
+You set it up once; afterwards every post just works. It does two jobs:
 
-  1. Serves the blog-post folder (so there's no file:// / CORS friction).
-  2. Bridges an in-page chat to your local `claude` CLI (your Claude Code login —
-     no API key). Each chat thread maps to a `claude` session id, so a thread is
-     resumable across messages. Threads persist to <dir>/chat/threads.json.
+  1. Serves a folder of posts (so there's no file:// / CORS friction). The landing
+     page at / lists every post; each is served at /<post-name>/.
+  2. Bridges each post's in-page chat to your local `claude` CLI (your Claude Code
+     login — no API key). A chat thread maps to a `claude` session id (resumable),
+     and threads + grounding live in that post's own <post>/chat/ folder.
 
-Every answer is grounded in the paper: at startup we write a CLAUDE.md (paper text
-+ guide instructions) into <dir>/chat/, and run `claude` from there so it loads
-that context automatically (and caches it, so it's cheap after the first turn).
+Per-post state is created lazily: the first time a post is chatted with, the server
+writes <post>/chat/CLAUDE.md from <post>/chat/paper.md (the grounding) and reads/
+writes <post>/chat/threads.json. `claude` runs from that folder so it loads the
+CLAUDE.md context automatically (cached, so it's cheap after the first turn).
+Setting all this up costs NO model tokens — only actually chatting does.
 
 Binds 127.0.0.1 only — it is NOT meant to be exposed to a network.
 
-Launch:
-  python chat-server.py --dir <post-folder> [--paper <paper.md|.txt>] [--port 8765]
-Then open the printed http://127.0.0.1:<port>/ URL.
+Run it (one of):
+  python chat-server.py --install [--dir ~/paper-blogposts] [--port 8877]
+      → installs a macOS LaunchAgent so it auto-starts at login (recommended).
+  python chat-server.py [--dir <folder-of-posts | single-post>] [--port 8877]
+      → run in the foreground. --dir may be a folder of posts OR one post folder.
+Then open http://127.0.0.1:<port>/ and pick a post.
 
-The post's front-end pings /__chat/ping; if this server answers, the chat UI
-appears, otherwise the post stays a plain static read.
+Each post's front-end pings <post>/__chat/ping (a RELATIVE URL, so it works wherever
+the post is mounted); if this server answers, the chat UI appears, otherwise the post
+stays a plain static read.
 """
 import argparse
+import html
 import json
+import os
+import re
 import subprocess
+import sys
 import threading
 import time
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 GUIDE = """You are a warm, sharp reading companion living in the sidebar of a friendly, \
 colloquial blog-post version of a scientific paper. A reader is going through the post \
@@ -62,23 +74,59 @@ PERSONA = ("You are the reading-companion chat for a friendly blog-post version 
            "unicode-art or plain-text math.")
 
 
-class Ctx:
-    """Shared server state: paths, the thread store, and the claude bridge."""
+INDEX_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>paper2blogpost — your posts</title>
+<style>
+  :root{{color-scheme:light dark}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;
+    max-width:680px;margin:9vh auto;padding:0 22px;line-height:1.6;color:#23201b;background:#fbf9f5}}
+  @media(prefers-color-scheme:dark){{body{{color:#ece7dc;background:#15140f}}}}
+  h1{{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}}
+  .sub{{color:#8a8378;font-size:14px;margin:0 0 26px}}
+  ul{{list-style:none;padding:0;margin:0}}
+  a.post{{display:block;padding:14px 16px;border-radius:12px;text-decoration:none;color:inherit;
+    border:1px solid #e7e1d6;margin-bottom:10px;transition:.15s;font-weight:600}}
+  @media(prefers-color-scheme:dark){{a.post{{border-color:#322f27}}}}
+  a.post:hover{{border-color:#1f6f6b;color:#1f6f6b}}
+  li.empty{{color:#8a8378}}
+  footer{{margin-top:30px;color:#8a8378;font-size:12.5px}}
+  code{{background:rgba(128,128,128,.15);padding:1px 5px;border-radius:5px}}
+</style></head><body>
+<h1>Your paper blog-posts</h1>
+<p class="sub">Served locally · each chat is grounded in its own paper · pick one to read &amp; chat.</p>
+<ul>{rows}</ul>
+<footer>Serving <code>{root}</code> — drop new <code>&lt;name&gt;-blogpost/</code> folders here and refresh.</footer>
+</body></html>"""
 
-    def __init__(self, root: Path, paper_text: str, model: str = None):
-        self.root = root.resolve()
+
+class Ctx:
+    """State for ONE post: its paths, thread store, and the claude bridge. Grounds on
+    the post's own `chat/paper.md`. Created lazily (per post) by `get_ctx`."""
+
+    def __init__(self, post_dir: Path, model: str = None):
+        self.root = post_dir.resolve()
         self.model = model
         self.chatdir = self.root / "chat"
-        self.chatdir.mkdir(exist_ok=True)
+        self.chatdir.mkdir(parents=True, exist_ok=True)
+        paper_file = self.chatdir / "paper.md"
+        paper_text = paper_file.read_text(errors="ignore") if paper_file.exists() else ""
+        self.grounded = bool(paper_text)
         (self.chatdir / "CLAUDE.md").write_text(GUIDE.format(paper=paper_text or "(no paper text was provided)"))
         self.threads_path = self.chatdir / "threads.json"
+        self.defs_path = self.chatdir / "definitions.json"
         self.lock = threading.Lock()
-        self.threads = {}
-        if self.threads_path.exists():
+        self.threads = self._load(self.threads_path)
+        self.definitions = self._load(self.defs_path)   # id -> {anchor, term, definition, source, …}
+
+    @staticmethod
+    def _load(path):
+        if path.exists():
             try:
-                self.threads = json.loads(self.threads_path.read_text())
+                return json.loads(path.read_text())
             except Exception:
-                self.threads = {}
+                return {}
+        return {}
 
     def _persist(self):
         self.threads_path.write_text(json.dumps(self.threads, indent=2))
@@ -98,6 +146,18 @@ class Ctx:
     def get_thread(self, tid):
         with self.lock:
             return self.threads.get(tid)
+
+    # ---- definitions (select-text → Define) ----
+    def define_list(self):
+        with self.lock:
+            return list(self.definitions.values())
+
+    def save_definition(self, did, anchor, data):
+        with self.lock:
+            rec = {"id": did, "anchor": anchor, "created": time.time(), **data}
+            self.definitions[did] = rec
+            self.defs_path.write_text(json.dumps(self.definitions, indent=2))
+            return rec
 
     def save_turn(self, tid, session_id, anchor, kind, user_msg, assistant_msg, settings=None):
         # Stamp with wall-clock time, not an in-process counter: the counter resets to 0
@@ -167,7 +227,21 @@ class Ctx:
                 yield {"type": "_error", "message": err or f"claude exited {proc.returncode}"}
 
 
-CTX: Ctx = None
+# One persistent server can serve MANY posts. Each post folder gets its own Ctx
+# (its own chat/paper.md grounding + chat/threads.json), created lazily and cached.
+SERVER = {"root": None, "model": None}     # filled in by main()
+CTX_BY_POST = {}
+_ctx_lock = threading.Lock()
+
+
+def get_ctx(post_dir: Path) -> Ctx:
+    key = str(post_dir.resolve())
+    with _ctx_lock:
+        ctx = CTX_BY_POST.get(key)
+        if ctx is None:
+            ctx = Ctx(post_dir, model=SERVER["model"])
+            CTX_BY_POST[key] = ctx
+        return ctx
 
 # Map a tool name (from a tool_use block) to a friendly "what it's doing now" label.
 TOOL_PHASES = {
@@ -216,12 +290,84 @@ def _tool_detail(name, inp):
     return ""
 
 
+# ---- Define (select-text → Define): a 3-tier lookup returning a small JSON object ----
+DEFINE_MODEL = "claude-sonnet-5"
+DEFINE_EFFORT = "medium"
+
+DEFINE_PROMPT = """The reader selected the term "{term}" in this paper and wants it defined. \
+Follow this strategy STRICTLY, in order, and stop at the first tier that works:
+
+1. PAPER FIRST. Search THIS paper (your CLAUDE.md context) from the top for where "{term}" \
+is defined or first introduced. If the paper defines or clearly explains it, use that. \
+Set "source":"paper" and set "paper_quote" to a short VERBATIM excerpt (<=160 chars) copied \
+exactly from the paper at the point of definition, so it can be located on the page.
+
+2. ELSE FOLLOW A REFERENCE. If the paper does not define it, find where "{term}" appears and \
+look for a citation near that appearance. If there is one, look that reference up on the web \
+(use your web search / fetch tools) and define the term from that source. Set "source":"reference" \
+and fill "reference" with {{"num": <the [N] citation number if identifiable, else null>, \
+"title": "<work title>", "url": "<best URL to the source>"}}.
+
+3. ELSE FROM MEMORY. If the paper neither defines it nor cites a relevant reference for it, \
+define it from your own knowledge. Set "source":"memory".
+
+Keep "definition" to 1-3 clear, colloquial sentences — as readable as a good blog post, \
+explaining any jargon in passing. Do not hedge about which tier you used; just fill the fields.
+
+The reader's immediate context (the paragraph around their selection):
+"{context}"
+
+Respond with ONLY a single JSON object and nothing else:
+{{"term": "{term}", "definition": "...", "source": "paper|reference|memory", \
+"paper_quote": "... (only when source=paper)", \
+"reference": {{"num": N_or_null, "title": "...", "url": "..."}} (only when source=reference)}}"""
+
+
+def _parse_define(text, term):
+    """Pull the JSON object out of the model's reply, defensively."""
+    s = (text or "").strip()
+    i, j = s.find("{"), s.rfind("}")
+    if i >= 0 and j > i:
+        try:
+            obj = json.loads(s[i:j + 1])
+            if isinstance(obj, dict) and obj.get("definition"):
+                obj.setdefault("term", term)
+                if obj.get("source") not in ("paper", "reference", "memory"):
+                    obj["source"] = "memory"
+                return obj
+        except Exception:
+            pass
+    # couldn't parse structured output — fall back to treating the reply as a plain definition
+    return {"term": term, "definition": s or "(no definition returned)", "source": "memory"}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **k):
-        super().__init__(*a, directory=str(CTX.root), **k)
+        super().__init__(*a, directory=str(SERVER["root"]), **k)
 
     def log_message(self, *a):
         pass  # quiet
+
+    # ---- which post does a /__chat/ request belong to? ----
+    def _chat_route(self):
+        """For a `…/__chat/<endpoint>` path, return (post_dir | None, endpoint). The post
+        is the path prefix before `/__chat/` (empty prefix = the root is itself a post).
+        Returns (None, None) when the path isn't a chat path."""
+        path = urlsplit(self.path).path
+        marker = "/__chat/"
+        i = path.find(marker)
+        if i < 0:
+            return None, None
+        endpoint = path[i + len(marker):]
+        sub = unquote(path[:i]).strip("/")
+        root = SERVER["root"]
+        post_dir = (root / sub) if sub else root
+        try:
+            post_dir = post_dir.resolve()
+            post_dir.relative_to(root.resolve())     # guard against path traversal
+        except Exception:
+            return None, endpoint
+        return (post_dir if post_dir.is_dir() else None), endpoint
 
     # ---- helpers ----
     def _json(self, obj, code=200):
@@ -250,20 +396,63 @@ class Handler(SimpleHTTPRequestHandler):
 
     # ---- routes ----
     def do_GET(self):
-        if self.path == "/__chat/ping":
-            return self._json({"ok": True})
-        if self.path == "/__chat/threads":
-            return self._json(CTX.thread_list())
-        if self.path.startswith("/__chat/thread/"):
-            return self._json(CTX.get_thread(self.path.rsplit("/", 1)[-1]) or {}, )
+        post_dir, endpoint = self._chat_route()
+        if endpoint is not None:
+            if endpoint == "ping":
+                return self._json({"ok": True})            # server is up (post-agnostic)
+            if post_dir is None:
+                return self._json({"error": "unknown post"}, 404)
+            ctx = get_ctx(post_dir)
+            if endpoint == "threads":
+                return self._json(ctx.thread_list())
+            if endpoint.startswith("thread/"):
+                return self._json(ctx.get_thread(endpoint.split("/", 1)[1]) or {})
+            if endpoint == "definitions":
+                return self._json(ctx.define_list())
+            return self._json({"error": "not found"}, 404)
+        # static files; a bare "/" with no index.html at the root → the post listing
+        p = urlsplit(self.path).path
+        if p in ("/", "") and not (SERVER["root"] / "index.html").exists():
+            return self._serve_index()
         return super().do_GET()
 
     def do_POST(self):
-        if self.path == "/__chat/send":
-            return self._chat()
+        post_dir, endpoint = self._chat_route()
+        if endpoint in ("send", "define"):
+            if post_dir is None:
+                return self._json({"error": "unknown post"}, 404)
+            ctx = get_ctx(post_dir)
+            return self._chat(ctx) if endpoint == "send" else self._define(ctx)
         self.send_error(404)
 
-    def _chat(self):
+    # ---- landing page: list every post under the root ----
+    def _serve_index(self):
+        root = SERVER["root"]
+        posts = []
+        for child in sorted(root.iterdir(), key=lambda c: c.name.lower()):
+            idx = child / "index.html"
+            if child.is_dir() and idx.exists():
+                posts.append((child.name, self._title_of(idx) or child.name))
+        rows = "\n".join(
+            f'<li><a class="post" href="/{html.escape(name)}/">{html.escape(title)}</a></li>'
+            for name, title in posts
+        ) or '<li class="empty">No posts here yet — build one with the paper2blogpost skill and drop its folder here.</li>'
+        body = INDEX_HTML.format(rows=rows, root=html.escape(str(root))).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    @staticmethod
+    def _title_of(index_path):
+        try:
+            m = re.search(r"<title>(.*?)</title>", index_path.read_text(errors="ignore")[:4000], re.I | re.S)
+            return re.sub(r"\s+", " ", m.group(1)).strip() if m else None
+        except Exception:
+            return None
+
+    def _chat(self, ctx):
         try:
             length = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(length) or b"{}")
@@ -297,12 +486,24 @@ class Handler(SimpleHTTPRequestHandler):
         if not msg:
             return self._json({"error": "empty message"}, 400)
 
-        th = CTX.get_thread(tid)
+        th = ctx.get_thread(tid)
         session_id = th.get("sessionId") if th else None
 
         self._sse_open()
+        text, new_sid = self._run(ctx, msg, session_id, model, effort, internet, stream_text=True)
+        text = text.strip()
+        # store the reader's raw message (or a label for actions with no typed text)
+        display = raw or ("Rewrite this for clarity" if kind == "rewrite" else
+                          ("(about the highlighted passage)" if quote else msg))
+        ctx.save_turn(tid, new_sid, anchor, kind, display, text,
+                      settings={"model": model, "effort": effort, "internet": internet})
+        self._sse({"done": True, "threadId": tid, "sessionId": new_sid})
+
+    def _run(self, ctx, message, session_id, model, effort, internet, stream_text=True):
+        """Stream one claude turn: always emit phase pills; emit text deltas only when
+        stream_text. Returns (full_text, new_session_id). Caller must _sse_open() first."""
         full, new_sid = [], session_id
-        for ev in CTX.run_claude(msg, session_id, model=model, effort=effort, internet=internet):
+        for ev in ctx.run_claude(message, session_id, model=model, effort=effort, internet=internet):
             t = ev.get("type")
             if t == "system" and ev.get("subtype") == "init" and ev.get("session_id"):
                 new_sid = ev["session_id"]
@@ -323,7 +524,8 @@ class Handler(SimpleHTTPRequestHandler):
                 elif et == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta":
                     txt = e["delta"]["text"]
                     full.append(txt)
-                    self._sse({"delta": txt})
+                    if stream_text:
+                        self._sse({"delta": txt})
             elif t == "assistant":
                 # the consolidated turn carries each tool_use's full input — refine the
                 # pill with a detail (the query / page / file), and act as a fallback if
@@ -344,47 +546,157 @@ class Handler(SimpleHTTPRequestHandler):
                 if not full and ev.get("result"):
                     self._sse({"phase": None})
                     full.append(ev["result"])
-                    self._sse({"delta": ev["result"]})
+                    if stream_text:
+                        self._sse({"delta": ev["result"]})
             elif t == "_error":
                 self._sse({"phase": None})
                 self._sse({"error": ev.get("message", "claude error")})
+        return "".join(full), new_sid
 
-        text = "".join(full).strip()
-        # store the reader's raw message (or a label for actions with no typed text)
-        display = raw or ("Rewrite this for clarity" if kind == "rewrite" else
-                          ("(about the highlighted passage)" if quote else msg))
-        CTX.save_turn(tid, new_sid, anchor, kind, display, text,
-                      settings={"model": model, "effort": effort, "internet": internet})
-        self._sse({"done": True, "threadId": tid, "sessionId": new_sid})
+    def _define(self, ctx):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length) or b"{}")
+        except Exception:
+            return self._json({"error": "bad request"}, 400)
+        anchor = data.get("anchor") or {}
+        term = (data.get("term") or anchor.get("quote") or "").strip()
+        context = (data.get("context") or "").strip()[:1500]
+        if not term:
+            return self._json({"error": "no term"}, 400)
+
+        msg = DEFINE_PROMPT.format(term=term, context=context or "(none provided)")
+        self._sse_open()
+        # Sonnet 5 / medium, internet ON — tier 2 may need to follow a reference on the web.
+        text, _ = self._run(ctx, msg, None, DEFINE_MODEL, DEFINE_EFFORT, True, stream_text=False)
+        obj = _parse_define(text, term)
+        did = uuid.uuid4().hex
+        ctx.save_definition(did, anchor, obj)
+        self._sse({"define": {"id": did, **obj}, "done": True})
+
+
+# ---------------------------------------------------------------------------
+# Auto-start at login (macOS launchd). `--install` writes a LaunchAgent so the
+# server is always running — open any post and chat just works, no manual launch.
+# ---------------------------------------------------------------------------
+LAUNCHD_LABEL = "com.paper2blogpost.chat"
+
+
+def _plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+
+
+def _support_dir() -> Path:
+    return Path.home() / "Library" / "Application Support" / "paper2blogpost"
+
+
+def install_launchd(root: Path, port: int, model: str):
+    import plistlib
+    import shutil
+    if sys.platform != "darwin":
+        raise SystemExit("--install sets up a macOS LaunchAgent; on Linux use systemd --user "
+                         "or just run the server in the background. See references/chat-mode.md.")
+    # A LaunchAgent runs detached from any Terminal — it does NOT inherit the shell's file
+    # permissions. If this script lives under a TCC-protected folder (Desktop/Documents/
+    # Downloads/iCloud Drive/…), which it commonly does if the skill sits in a project repo,
+    # the launchd process gets "Operation not permitted" trying to even read the file, and
+    # macOS's Full Disk Access picker won't let you grant access to a symlink (which python3
+    # binaries under Xcode's Command Line Tools usually are) — a dead end either way.
+    # Fix: copy the script to Application Support, which macOS does NOT protect (it's the
+    # standard place for a background helper's own files), and launch from there instead.
+    # Re-run --install whenever the skill's chat-server.py is updated to refresh this copy.
+    support_dir = _support_dir()
+    support_dir.mkdir(parents=True, exist_ok=True)
+    installed_script = support_dir / "chat-server.py"
+    shutil.copy2(Path(__file__).resolve(), installed_script)
+
+    prog = [sys.executable, str(installed_script), "--dir", str(root), "--port", str(port)]
+    if model:
+        prog += ["--model", model]
+    logdir = Path.home() / "Library" / "Logs"
+    logdir.mkdir(parents=True, exist_ok=True)
+    log = str(logdir / "paper2blogpost-chat.log")
+    plist = {
+        "Label": LAUNCHD_LABEL,
+        "ProgramArguments": prog,
+        "RunAtLoad": True,
+        "KeepAlive": True,                 # restart if it ever dies
+        "WorkingDirectory": str(root),
+        "StandardOutPath": log,
+        "StandardErrorPath": log,
+        # launchd jobs get a bare PATH; carry the current one so `claude` is found.
+        "EnvironmentVariables": {"PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin")},
+    }
+    p = _plist_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "wb") as f:
+        plistlib.dump(plist, f)
+    subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
+    r = subprocess.run(["launchctl", "load", "-w", str(p)], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise SystemExit(f"launchctl load failed: {r.stderr.strip() or r.stdout.strip()}")
+    print(f"✓ Installed — the chat server now auto-starts at login and is running now.")
+    print(f"  serving:  {root}  →  http://127.0.0.1:{port}/")
+    print(f"  running:  {installed_script}  (a copy — re-run --install after script updates)")
+    print(f"  logs:     {log}")
+    print(f"  uninstall: python {Path(__file__).name} --uninstall")
+
+
+def uninstall_launchd():
+    p = _plist_path()
+    found = p.exists()
+    if found:
+        subprocess.run(["launchctl", "unload", "-w", str(p)], capture_output=True)
+        p.unlink()
+    support = _support_dir()
+    if support.exists():
+        import shutil
+        shutil.rmtree(support, ignore_errors=True)
+        found = True
+    print("✓ Uninstalled — auto-start removed and the server stopped." if found
+          else "Nothing to uninstall (no LaunchAgent found).")
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--dir", required=True, help="the blog-post folder (contains index.html)")
-    ap.add_argument("--paper", help="paper text file to ground the chat (default: <dir>/chat/paper.md)")
-    ap.add_argument("--port", type=int, default=8765)
+    ap = argparse.ArgumentParser(
+        description="Local companion server for paper2blogpost. Serves one post OR a whole "
+                    "folder of posts, and bridges each post's in-page chat to your `claude` CLI.")
+    ap.add_argument("--dir", default=str(Path.home() / "paper-blogposts"),
+                    help="a single post folder, OR a folder containing many post folders "
+                         "(default: ~/paper-blogposts)")
+    ap.add_argument("--port", type=int, default=8877)
     ap.add_argument("--model", help="claude model for the chat (default: your CLI default; "
                                      "e.g. claude-haiku-4-5 / claude-sonnet-4-6 for snappier replies)")
+    ap.add_argument("--install", action="store_true",
+                    help="install a macOS LaunchAgent so the server auto-starts at login, then exit")
+    ap.add_argument("--uninstall", action="store_true", help="remove the LaunchAgent, then exit")
     args = ap.parse_args()
 
-    root = Path(args.dir).resolve()
-    if not (root / "index.html").exists():
-        raise SystemExit(f"No index.html in {root} — point --dir at the blog-post folder.")
+    root = Path(args.dir).expanduser().resolve()
 
-    paper_file = Path(args.paper) if args.paper else (root / "chat" / "paper.md")
-    paper_text = paper_file.read_text(errors="ignore") if paper_file.exists() else ""
-    if not paper_text:
-        print(f"[!] No paper text found ({paper_file}). Chat will work but won't be grounded "
-              f"in the paper — pass --paper <file> or drop chat/paper.md in the post folder.")
+    if args.uninstall:
+        return uninstall_launchd()
+    if args.install:
+        root.mkdir(parents=True, exist_ok=True)
+        return install_launchd(root, args.port, args.model)
 
-    global CTX
-    CTX = Ctx(root, paper_text, model=args.model)
+    root.mkdir(parents=True, exist_ok=True)
+    SERVER["root"] = root
+    SERVER["model"] = args.model
+
+    single = (root / "index.html").exists()
+    posts = [] if single else [c.name for c in sorted(root.iterdir())
+                               if c.is_dir() and (c / "index.html").exists()]
 
     httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://127.0.0.1:{args.port}/"
     print(f"paper2blogpost chat server → {url}")
-    print(f"  serving:  {root}")
-    print(f"  grounded: {'yes (%d chars)' % len(paper_text) if paper_text else 'no'}")
+    if single:
+        print(f"  serving:  {root}  (single post)")
+    else:
+        print(f"  serving:  {root}  ({len(posts)} post{'' if len(posts)==1 else 's'})")
+        for name in posts[:12]:
+            print(f"     • {url}{name}/")
     print("  Ctrl-C to stop.")
     try:
         httpd.serve_forever()

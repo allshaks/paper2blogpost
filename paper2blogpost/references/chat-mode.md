@@ -7,17 +7,21 @@ to the post; a plain or shared copy stays a clean static read.
 
 ## How it fits together
 
-- **`scripts/chat-server.py`** — a local server (binds `127.0.0.1` only) that:
-  1. serves the post folder (no `file://` / CORS issues), and
-  2. bridges the in-page chat to the user's **`claude` CLI** (their Claude Code
-     login — no API key). Each chat thread maps to a `claude` session id, so a
-     thread is resumable; threads persist to `<post>/chat/threads.json`.
-- **Grounding**: at startup the server writes `<post>/chat/CLAUDE.md` = a guide +
-  the paper's full text, and runs `claude` from `<post>/chat/`, so every turn is
-  grounded in the paper (cached after the first call, so it's cheap).
-- **Front-end**: the template's `#chat` sidebar pings `/__chat/ping`; if the
-  server answers, the "💬 Ask Claude" launcher appears. Messages stream back token
-  by token over SSE.
+- **`scripts/chat-server.py`** — **one** local server (binds `127.0.0.1` only) for
+  *all* your posts; you set it up once. It:
+  1. serves a folder of posts — the landing page at `/` lists them and each post is
+     served at `/<post-name>/` (it also accepts a single post folder directly), and
+  2. bridges each post's in-page chat to the user's **`claude` CLI** (their Claude
+     Code login — no API key). A thread maps to a resumable `claude` session id.
+- **Per-post state, created lazily**: the first time a post is chatted with, the
+  server writes `<post>/chat/CLAUDE.md` (a guide + that post's paper text from
+  `<post>/chat/paper.md`) and reads/writes `<post>/chat/threads.json`. `claude` runs
+  from `<post>/chat/`, so every turn is grounded in *that* paper (cached after the
+  first call). **Setting this up costs no model tokens — only actually chatting does.**
+- **Front-end**: the template's `#chat` sidebar pings `__chat/ping` — a **relative**
+  URL, so it resolves to `/<post>/__chat/ping` wherever the post is mounted (and to a
+  dead URL under `file://`, leaving plain copies static). If the server answers, the
+  "💬 Ask Claude" launcher appears. Messages stream back token by token over SSE.
 
 The server quiets the user's global Claude Code environment selectively — it loads
 **no MCP servers** (`--strict-mcp-config --mcp-config '{"mcpServers":{}}'`) and
@@ -27,25 +31,40 @@ don't get "★ Insight" blocks in a reader chat). It deliberately does **not** u
 
 ## What the skill must do at build time
 
-For chat mode to ground itself, drop the paper's plain text into the post:
+Two small things make a post chat-ready:
 
-```
-<post>/chat/paper.md      ← the extracted paper text (build/text/full.txt)
-```
+1. Drop the paper's plain text where the server grounds on it:
+   ```
+   <post>/chat/paper.md      ← the extracted paper text (build/text/full.txt)
+   ```
+2. Put the finished post folder under the server's **posts root** (default
+   `~/paper-blogposts/`) so the one persistent server picks it up — e.g.
+   `~/paper-blogposts/<paper-slug>-blogpost/`.
 
-The server reads that by default (or take `--paper <file>`). Everything else
-(`CLAUDE.md`, `threads.json`) the server creates itself. If `paper.md` is absent
-the chat still works but won't be grounded in the paper.
+Everything else (`CLAUDE.md`, `threads.json`) the server creates itself, lazily, in
+`<post>/chat/`. If `paper.md` is absent the chat still works but won't be grounded.
 
-## Launching it (tell the user)
+## Running it (tell the user)
+
+**Recommended — set up once, runs forever.** Install a login agent (macOS) that keeps
+the server up, so afterwards every post just works with nothing to launch:
 
 ```bash
-python scripts/chat-server.py --dir <post-folder> [--model claude-haiku-4-5]
-# then open the printed http://127.0.0.1:8765/ URL
+python scripts/chat-server.py --install [--dir ~/paper-blogposts] [--model claude-haiku-4-5]
+# auto-starts now and at every login; open http://127.0.0.1:8877/ and pick a post.
+# remove later with:  python scripts/chat-server.py --uninstall
 ```
 
-`--model` is the *default*; the reader can also pick the model and effort live in
-the chat header (see below), which overrides it per message.
+**Or just run it in the foreground** (a folder of posts, or one post):
+
+```bash
+python scripts/chat-server.py --dir <folder-of-posts | single-post> [--model …]
+```
+
+`--model` is the *default*; the reader can pick model + effort live in the chat header
+(see below), which overrides it per message. `--install` writes a macOS LaunchAgent
+(`~/Library/LaunchAgents/com.paper2blogpost.chat.plist`); on Linux, run the foreground
+command from a `systemd --user` service or a login script instead.
 
 ## In the chat UI
 
@@ -80,6 +99,17 @@ the chat header (see below), which overrides it per message.
 - **Contained scrolling** — the message list and thread list use
   `overscroll-behavior:contain`, so scrolling the chat to its top/bottom never
   spills over into scrolling the article underneath.
+- **Define** — the select-text bubble also offers **Define**. It runs a fixed
+  **Sonnet 5 / medium** lookup (internet on) with a strict 3-tier strategy: (1) find a
+  definition *in the paper* (returns a `paper_quote` to locate it); (2) else follow a
+  nearby **citation** and define from that reference on the web (returns its URL / `[N]`);
+  (3) else define *from memory*. The selection gets its own **terracotta** highlight
+  (distinct from the teal chat ones), and hovering it shows a popup with the definition
+  and a source link — **jump to it** in the paper (fuzzy-matched, since the article is a
+  rewrite so the original phrasing rarely survives verbatim), **open** the external
+  reference, or a note that it's from general knowledge. Definitions persist per-post in
+  `chat/definitions.json` and re-apply on load. Server: `POST …/__chat/define` (SSE, same
+  phase pills as chat) + `GET …/__chat/definitions`.
 - **LaTeX math** — replies render math with the page's MathJax: inline `$…$` and
   displayed `$$…$$` (the persona tells the model to emit real LaTeX). `mdLite` pulls
   math spans out before the markdown passes so `*`/`_` inside an equation aren't

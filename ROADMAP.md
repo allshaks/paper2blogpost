@@ -84,9 +84,30 @@ post but hidden unless the server answers `/__chat/ping`. See `references/chat-m
   at the top of the chat (the quote + **Jump ↗**) that smooth-scrolls the article to the
   passage and flashes it. Shown both for new select→Ask/Rewrite threads and passage threads
   reopened from history. Verified: bar renders the quote; Jump centers + flashes the mark.
+- **Define (select-text → 3-tier lookup)** (2026-07-01): the selection bubble gains
+  **Define** alongside Ask/Rewrite. A fixed **Sonnet 5 / medium** call (internet on) tries,
+  in order: define from the paper (with a `paper_quote` locator) → follow a nearby citation
+  and define from that reference on the web (URL / `[N]`) → define from memory. The term gets
+  a distinct **terracotta** highlight (vs the teal chat ones); hovering shows a popup with the
+  definition + a source link (jump-to-it-in-the-paper via fuzzy match since the article is a
+  rewrite, open-the-reference, or "from general knowledge"). Persists per-post in
+  `chat/definitions.json`. New server endpoints `POST/GET …/__chat/define[initions]`; the chat
+  streaming loop was extracted into a shared `_run(stream_text=…)`. Verified end-to-end:
+  memory + paper tiers, terracotta highlight, hover/dismiss/re-show, reload persistence, and
+  the fuzzy jump locating the definition in the colloquial text.
 - **History “← Back to current chat”** (2026-06-28): the thread-list overlay (which covers
   the header) gains a back row so you can return to the chat you were in without having to
   pick one. Default chat model set to **Sonnet** (was already the code default; documented).
+- **One persistent multi-post chat server** (2026-06-28): replaced the per-post server with
+  a single always-on server that serves a whole folder of posts (landing page at `/` lists
+  them; each at `/<post>/`), with **lazy per-post state** (each post's own `chat/paper.md`
+  grounding + `chat/threads.json`, created on first use). `--install` writes a macOS
+  LaunchAgent so it auto-starts at login → set up once, then any post just works. The client
+  now uses **relative** `__chat/…` URLs so it works wherever a post is mounted. Removes the
+  per-html launch friction; setup spends no tokens (only chatting does). Verified single- and
+  multi-post modes, the index, per-post grounding isolation, 404s, and in-browser relative
+  pings. (Clears up the user's worry about "wasting tokens to set up chat per html" — setup
+  is pure file I/O.)
 
 **Phase 3 — polish (next).** Nicer thread switcher, delete-thread, multiple highlights per
 passage, an "apply this rewrite to the post" action.

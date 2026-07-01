@@ -195,17 +195,24 @@ paper, grounded in its full text and running locally through the reader's `claud
 CLI. It's a *powered mode*: the chat UI is already in every post but stays hidden
 unless the companion server is running, so a plain/shared copy is unaffected.
 
-To enable it, drop the paper's plain text where the server can ground on it, then
-tell the user how to launch:
+There's **one** companion server for *all* the reader's posts — set up once, then
+every post just works (no per-post launching, and no tokens spent on setup). To make
+a post chat-ready: drop the paper's plain text into it for grounding, and put the post
+under the server's posts root (default `~/paper-blogposts/`).
 
 ```bash
 cp "$BUILD/text/full.txt" "<post>/chat/paper.md"        # grounding text
-python scripts/chat-server.py --dir "<post>" [--model claude-haiku-4-5]
-# open the printed http://127.0.0.1:8765/ URL; click "💬 Ask Claude"
+mkdir -p ~/paper-blogposts && cp -R "<post>" ~/paper-blogposts/   # so the server serves it
+
+# one-time setup — auto-starts at login, serves every post under the root:
+python scripts/chat-server.py --install [--model claude-haiku-4-5]
+# then open http://127.0.0.1:8877/ , pick the post, click "💬 Ask Claude"
 ```
 
-Full details (how grounding, sessions, and persistence work; the planned
-select-text→highlight phase) are in `references/chat-mode.md`.
+(For a quick one-off you can still point the server straight at a single post:
+`python scripts/chat-server.py --dir "<post>"`.) Full details — multi-post routing,
+per-post lazy grounding/sessions, the `--install` LaunchAgent — are in
+`references/chat-mode.md`.
 
 ## Voice: colloquial but complete
 

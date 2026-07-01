@@ -358,6 +358,33 @@ body.chat-resizing{cursor:ew-resize; user-select:none}
 mark.q-highlight{background:var(--link-soft); color:inherit; border-radius:3px;
   padding:.5px 1px; cursor:pointer; box-shadow:inset 0 -2px 0 var(--link)}
 mark.q-highlight:hover{filter:brightness(.97)}
+/* a defined term — distinct (terracotta) from the teal chat highlights */
+mark.def-highlight{background:var(--accent-soft); color:inherit; border-radius:3px;
+  padding:.5px 1px; cursor:help; box-shadow:inset 0 -2px 0 var(--accent)}
+mark.def-highlight:hover{filter:brightness(.97)}
+mark.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
+@keyframes defpulse{0%,100%{opacity:.5}50%{opacity:.85}}
+/* the hover definition popup (document-anchored, scrolls with the page) */
+#defpop{position:absolute; z-index:79; display:none; max-width:340px; max-height:52vh; overflow-y:auto;
+  overscroll-behavior:contain; background:var(--surface); color:var(--ink); border:1px solid var(--rule);
+  border-radius:12px; box-shadow:var(--shadow); padding:13px 15px;
+  font-family:var(--sans); font-size:13.5px; line-height:1.5}
+#defpop.show{display:block}
+#defpop .dp-term{font-weight:700; font-size:14px; margin-bottom:5px; color:var(--accent)}
+#defpop .dp-def{color:var(--ink); margin-bottom:10px}
+#defpop .dp-src{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px;
+  border-top:1px solid var(--rule); padding-top:9px}
+#defpop .dp-badge{color:var(--ink-soft); font-weight:600}
+#defpop .dp-note{color:var(--ink-faint); font-style:italic}
+#defpop a.dp-jump, #defpop a.dp-ext{color:var(--link); text-decoration:none; font-weight:600; white-space:nowrap}
+#defpop a.dp-jump:hover, #defpop a.dp-ext:hover{text-decoration:underline}
+#defpop .dp-loading{display:flex; align-items:center; gap:8px; color:var(--ink-soft); font-style:italic}
+#defpop .dp-loading .dp-tx{white-space:nowrap}
+#defpop .ph-dots{display:inline-flex; gap:3px}
+#defpop .ph-dots i{width:5px; height:5px; border-radius:50%; background:var(--ink-faint);
+  animation:phpulse 1.05s infinite ease-in-out}
+#defpop .ph-dots i:nth-child(2){animation-delay:.16s}
+#defpop .ph-dots i:nth-child(3){animation-delay:.32s}
 </style>
 </head>
 <body>
@@ -394,10 +421,11 @@ mark.q-highlight:hover{filter:brightness(.97)}
 
 <div id="refpop" role="dialog" aria-live="polite"></div>
 <div id="xpop" role="dialog" aria-live="polite"></div>
+<div id="defpop" role="dialog" aria-live="polite"></div>
 
 <!-- Chat (revealed only when the local companion server is running) -->
 <button id="chat-launch" title="Chat about this paper">💬 Ask&nbsp;Claude</button>
-<div id="sel-bubble"><button data-act="ask">Ask</button><button data-act="rewrite">Rewrite for clarity</button></div>
+<div id="sel-bubble"><button data-act="ask">Ask</button><button data-act="rewrite">Rewrite for clarity</button><button data-act="define">Define</button></div>
 <aside id="chat" aria-label="Chat about this paper">
   <div id="chat-grip" title="Drag to resize"></div>
   <header>
@@ -837,6 +865,8 @@ xpop.addEventListener('mouseleave', hideX);
   const tlist  = document.getElementById('chat-threads');
   const anchorBar = document.getElementById('chat-anchor');
   const bubble = document.getElementById('sel-bubble');
+  const defpop = document.getElementById('defpop');
+  const defs = {};   // id -> definition record, for the hover popups
   const modelSel = document.getElementById('chat-model');
   const effortSel= document.getElementById('chat-effort');
   const netBtn = document.getElementById('chat-net');
@@ -846,8 +876,8 @@ xpop.addEventListener('mouseleave', hideX);
   let serverUp = false, busy = false, cur = null, pendingAnchor = null, selRange = null;
 
   // Light up only if the companion server answers; then restore any highlights.
-  fetch('/__chat/ping').then(r=>r.ok?r.json():null).then(d=>{
-    if (d && d.ok){ serverUp = true; launch.style.display='block'; loadAnchors(); }
+  fetch('__chat/ping').then(r=>r.ok?r.json():null).then(d=>{
+    if (d && d.ok){ serverUp = true; launch.style.display='block'; loadAnchors(); loadDefinitions(); }
   }).catch(()=>{});
 
   // ---- settings (model / effort / internet), remembered ----
@@ -956,7 +986,7 @@ xpop.addEventListener('mouseleave', hideX);
     const my=++loadTok;
     cur=tid; pendingAnchor=null; tlist.classList.remove('open'); input.placeholder='Ask about the paper…';
     hideAnchorBar(); clearMsgs(false);
-    let t=null; try{ t=await fetch('/__chat/thread/'+tid).then(r=>r.json()); }catch{}
+    let t=null; try{ t=await fetch('__chat/thread/'+tid).then(r=>r.json()); }catch{}
     if(my!==loadTok) return;  // a newer load superseded this one
     clearMsgs(false);
     if(t&&t.messages&&t.messages.length) t.messages.forEach(m=>addMsg(m.role, m.text)); else clearMsgs(true);
@@ -965,12 +995,12 @@ xpop.addEventListener('mouseleave', hideX);
     setTimeout(()=>input.focus(),50);
   }
   async function openRecentOrNew(){
-    try{ const l=await fetch('/__chat/threads').then(r=>r.json()); if(l&&l.length) return setActive(l[0].id); }catch{}
+    try{ const l=await fetch('__chat/threads').then(r=>r.json()); if(l&&l.length) return setActive(l[0].id); }catch{}
     newChat();
   }
   async function toggleList(){
     if(tlist.classList.contains('open')){ tlist.classList.remove('open'); return; }
-    let l=[]; try{ l=await fetch('/__chat/threads').then(r=>r.json()); }catch{}
+    let l=[]; try{ l=await fetch('__chat/threads').then(r=>r.json()); }catch{}
     tlist.innerHTML='';
     // back button — return to the chat you were in without having to pick one
     const back=document.createElement('div'); back.className='thread-back';
@@ -1010,13 +1040,13 @@ xpop.addEventListener('mouseleave', hideX);
     const out=[]; const w=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {acceptNode:n=>range.intersectsNode(n)?1:2}); let n;
     while(n=w.nextNode()) out.push(n); return out;
   }
-  function wrapRange(range, tid){
+  function wrapRange(range, cls, data){
     textNodesInRange(range).forEach(node=>{
       const s=node===range.startContainer?range.startOffset:0;
       const e=node===range.endContainer?range.endOffset:node.textContent.length;
       if(e<=s) return;
       const r=document.createRange(); r.setStart(node,s); r.setEnd(node,e);
-      const m=document.createElement('mark'); m.className='q-highlight'; m.dataset.thread=tid;
+      const m=document.createElement('mark'); m.className=cls; Object.assign(m.dataset, data||{});
       try{ r.surroundContents(m); }catch{}
     });
   }
@@ -1036,7 +1066,7 @@ xpop.addEventListener('mouseleave', hideX);
     if(a.quote && range.toString().trim().slice(0,16)!==a.quote.trim().slice(0,16)) return null; // offsets drifted
     return range;
   }
-  function applyAnchor(a, tid){ const range=rangeForAnchor(a); if(range) wrapRange(range, tid); }
+  function applyAnchor(a, cls, data){ const range=rangeForAnchor(a); if(range) wrapRange(range, cls, data); }
   function flashEl(el){ el.classList.remove('xref-flash'); void el.offsetWidth;
     el.classList.add('xref-flash'); setTimeout(()=>el.classList.remove('xref-flash'), 1700); }
   // Scroll the article to the passage this chat is about and flash it. Uses the persistent
@@ -1044,7 +1074,7 @@ xpop.addEventListener('mouseleave', hideX);
   function jumpToPassage(anchor, tid){
     if(!anchor) return;
     let m=document.querySelector('mark.q-highlight[data-thread="'+tid+'"]');
-    if(!m){ applyAnchor(anchor, tid); m=document.querySelector('mark.q-highlight[data-thread="'+tid+'"]'); }
+    if(!m){ applyAnchor(anchor, 'q-highlight', {thread: tid}); m=document.querySelector('mark.q-highlight[data-thread="'+tid+'"]'); }
     if(m){ m.scrollIntoView({behavior:'smooth', block:'center'}); flashEl(m); }
   }
   // The backlink bar at the top of the chat (shown only when the thread has a passage).
@@ -1058,8 +1088,133 @@ xpop.addEventListener('mouseleave', hideX);
   }
   function hideAnchorBar(){ anchorBar.classList.remove('show'); anchorBar.onclick=null; anchorBar.innerHTML=''; }
   async function loadAnchors(){
-    try{ const l=await fetch('/__chat/threads').then(r=>r.json());
-      l.forEach(t=>{ if(t.anchor && t.anchor.sectionId) applyAnchor(t.anchor, t.id); }); }catch{}
+    try{ const l=await fetch('__chat/threads').then(r=>r.json());
+      l.forEach(t=>{ if(t.anchor && t.anchor.sectionId) applyAnchor(t.anchor, 'q-highlight', {thread: t.id}); }); }catch{}
+  }
+  // Re-apply saved definition highlights on load + cache their records for hover.
+  async function loadDefinitions(){
+    try{ const l=await fetch('__chat/definitions').then(r=>r.json());
+      l.forEach(rec=>{ if(rec.anchor && rec.anchor.sectionId){ defs[rec.id]=rec; applyAnchor(rec.anchor, 'def-highlight', {def: rec.id}); } }); }catch{}
+  }
+  // The paragraph a selection sits in — sent as local context so Define knows where the term is used.
+  function paragraphContext(range){
+    let el=range.commonAncestorContainer; el=el.nodeType===1?el:el.parentElement;
+    const block=el&&el.closest('p, li, blockquote, .callout, figcaption');
+    return block ? block.textContent.replace(/\s+/g,' ').trim().slice(0,1500) : '';
+  }
+  // Best-effort jump to where a definition appears in the (colloquially rewritten) article.
+  // The model's paper_quote is from the ORIGINAL text, so its exact phrasing usually won't
+  // survive the rewrite — try progressively less specific needles: distinctive multi-word
+  // windows from the quote, then acronyms / long tokens, then the term itself.
+  function jumpToQuote(q, term){
+    const norm=s=>(s||'').replace(/\s+/g,' ').trim().toLowerCase();
+    const nodes=[]; { const w=document.createTreeWalker(mainEl, NodeFilter.SHOW_TEXT, null); let n; while(n=w.nextNode()) nodes.push(n); }
+    const cands=[];
+    if(q){
+      const words=norm(q).split(' ').filter(w=>w.length>2);
+      for(let n=Math.min(6,words.length); n>=3; n--) for(let i=0;i+n<=words.length;i++) cands.push(words.slice(i,i+n).join(' '));
+      (q.match(/[A-Z]{2,6}s?|[A-Za-z]{7,}/g)||[]).forEach(t=>cands.push(norm(t)));  // acronyms & long words
+    }
+    if(term) cands.push(norm(term));
+    for(const c of cands){ if(c.length<3) continue;
+      for(const node of nodes){ if(norm(node.textContent).includes(c)){
+        const el=node.parentElement; if(el){ el.scrollIntoView({behavior:'smooth', block:'center'}); flashEl(el); return true; }
+      } }
+    }
+    return false;
+  }
+  function unwrapDef(id){
+    document.querySelectorAll('mark.def-highlight[data-def="'+id+'"]').forEach(m=>{
+      const p=m.parentNode; if(!p) return; while(m.firstChild) p.insertBefore(m.firstChild, m); p.removeChild(m); p.normalize&&p.normalize();
+    });
+  }
+  // ---- definition popup (loading → result), document-anchored to a highlight ----
+  let defHideT=null;
+  function positionDefPop(mark){
+    if(!mark) return;
+    const r=mark.getBoundingClientRect();
+    defpop.classList.add('show'); defpop.style.visibility='hidden';
+    const pw=defpop.offsetWidth, ph=defpop.offsetHeight;
+    let left=Math.max(8, Math.min(r.left, window.innerWidth-pw-8));
+    let top=r.bottom+8; if(top+ph>window.innerHeight && r.top-ph-8>4) top=r.top-ph-8;   // flip above if needed
+    defpop.style.left=(left+window.scrollX)+'px';
+    defpop.style.top=(top+window.scrollY)+'px';
+    defpop.style.visibility='';
+  }
+  function showDefLoading(mark){
+    defpop.innerHTML='<div class="dp-loading"><span class="dp-ic">💭</span><span class="dp-tx">Defining…</span>'
+      +'<span class="ph-dots"><i></i><i></i><i></i></span></div>';
+    positionDefPop(mark);
+  }
+  function setDefPhase(label, icon){
+    const l=defpop.querySelector('.dp-loading'); if(!l) return;
+    if(label){ l.querySelector('.dp-ic').textContent=icon||'💭'; l.querySelector('.dp-tx').textContent=label; }
+  }
+  function renderDefPopup(rec, mark){
+    if(!rec) return;
+    let src;
+    if(rec.source==='paper'){
+      src='<span class="dp-badge">📄 Defined in the paper</span>'
+        + (rec.paper_quote ? ' <a class="dp-jump" href="#">go to it&nbsp;↗</a>' : '');
+    } else if(rec.source==='reference'){
+      const r=rec.reference||{};
+      const label=r.title ? esc(r.title.slice(0,80)) : (r.num!=null ? 'reference ['+r.num+']' : 'a reference');
+      src='<span class="dp-badge">🔗 From '+label+'</span>'
+        + (r.url ? ' <a class="dp-ext" href="'+esc(r.url)+'" target="_blank" rel="noopener">open&nbsp;↗</a>'
+                 : (r.num!=null ? ' <a class="dp-jump" data-refnum="'+esc(r.num)+'" href="#ref-'+esc(r.num)+'">in refs&nbsp;↗</a>' : ''));
+    } else {
+      src='<span class="dp-badge">🧠 From general knowledge</span><span class="dp-note">— not defined in this paper</span>';
+    }
+    defpop.innerHTML='<div class="dp-term">'+esc(rec.term||'')+'</div>'
+      +'<div class="dp-def">'+esc(rec.definition||'')+'</div><div class="dp-src">'+src+'</div>';
+    const jump=defpop.querySelector('.dp-jump');
+    if(jump) jump.onclick=(ev)=>{ ev.preventDefault();
+      if(rec.source==='paper'){ jumpToQuote(rec.paper_quote, rec.term); }
+      else{ const el=document.getElementById('ref-'+(rec.reference||{}).num); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); flashEl(el);} }
+      hideDefPopup();
+    };
+    positionDefPop(mark);
+  }
+  function hideDefPopup(){ defpop.classList.remove('show'); }
+  // hover a defined term → show its definition (every time)
+  mainEl.addEventListener('mouseover', e=>{
+    const m=e.target.closest && e.target.closest('mark.def-highlight');
+    if(m && m.dataset.def && defs[m.dataset.def]){ clearTimeout(defHideT); renderDefPopup(defs[m.dataset.def], m); }
+  });
+  mainEl.addEventListener('mouseout', e=>{
+    if(e.target.closest && e.target.closest('mark.def-highlight')){ clearTimeout(defHideT); defHideT=setTimeout(hideDefPopup, 240); }
+  });
+  defpop.addEventListener('mouseenter', ()=>clearTimeout(defHideT));
+  defpop.addEventListener('mouseleave', hideDefPopup);
+  document.addEventListener('mousedown', e=>{ if(!defpop.contains(e.target) && !(e.target.closest&&e.target.closest('mark.def-highlight'))) hideDefPopup(); });
+  // select text → Define: draw a pending highlight, stream the lookup, then persist + show.
+  async function doDefine(anchor, ctxText){
+    const pend='pending-'+newId();
+    applyAnchor(anchor, 'def-highlight pending', {def: pend});
+    const pmark=()=>document.querySelector('mark.def-highlight[data-def="'+pend+'"]');
+    showDefLoading(pmark());
+    try{
+      const res=await fetch('__chat/define', {method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({anchor, term: anchor.quote, context: ctxText})});
+      const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='', finished=false, result=null;
+      while(!finished){
+        const {value,done}=await reader.read(); if(done) break;
+        buf+=dec.decode(value,{stream:true}); let i;
+        while((i=buf.indexOf('\n\n'))>=0){
+          const line=buf.slice(0,i).split('\n').find(l=>l.startsWith('data:')); buf=buf.slice(i+2);
+          if(!line) continue; let d; try{ d=JSON.parse(line.slice(5).trim()); }catch{ continue; }
+          if('phase' in d) setDefPhase(d.phase, d.icon);
+          if(d.error) result={error:d.error};
+          if(d.define) result=d.define;
+          if(d.done){ finished=true; try{ reader.cancel(); }catch{} break; }
+        }
+      }
+      if(!result || result.error){ unwrapDef(pend); hideDefPopup(); return; }
+      // finalize: swap the pending id for the real one, cache, render
+      document.querySelectorAll('mark.def-highlight[data-def="'+pend+'"]').forEach(m=>{ m.classList.remove('pending'); m.dataset.def=result.id; });
+      defs[result.id]=result;
+      renderDefPopup(result, document.querySelector('mark.def-highlight[data-def="'+result.id+'"]'));
+    }catch(err){ unwrapDef(pend); hideDefPopup(); }
   }
   mainEl.addEventListener('mouseup', ()=>{
     if(!serverUp) return;
@@ -1082,10 +1237,13 @@ xpop.addEventListener('mouseleave', hideX);
     b.addEventListener('mousedown', e=>e.preventDefault());
     b.addEventListener('click', ()=>{
       if(!selRange) return;
-      const anchor=anchorFor(selRange); const tid=newId();
+      const anchor=anchorFor(selRange);
+      const ctxText=paragraphContext(selRange);
+      hideBubble(); window.getSelection().removeAllRanges();
+      if(b.dataset.act==='define'){ doDefine(anchor, ctxText); return; }   // its own flow — no chat thread
+      const tid=newId();
       // NOTE: the highlight is NOT drawn here — it's drawn in doSend, once a message
       // is actually sent, so a passage isn't marked just for opening the bubble/sidebar.
-      hideBubble(); window.getSelection().removeAllRanges();
       open(); startThread(tid, anchor);
       if(b.dataset.act==='rewrite') doSend({kind:'rewrite', anchor});  // auto-sends → highlight appears now
       else setTimeout(()=>input.focus(), 60);                          // Ask → highlight appears when they send
@@ -1110,7 +1268,7 @@ xpop.addEventListener('mouseleave', hideX);
     addMsg('user', text || (kind==='rewrite' ? 'Rewrite this for clarity' : '(about the highlighted passage)'));
     // Draw the passage highlight NOW (a chat is actually being started), not on mere
     // selection — and only once per thread.
-    if (anchor && !document.querySelector('mark.q-highlight[data-thread="'+cur+'"]')) applyAnchor(anchor, cur);
+    if (anchor && !document.querySelector('mark.q-highlight[data-thread="'+cur+'"]')) applyAnchor(anchor, 'q-highlight', {thread: cur});
     input.value=''; input.style.height='auto'; input.placeholder='Ask about the paper…';
     // The bot bubble is created lazily on the first token of the answer. Until then —
     // and in the gaps between tool calls — a status pill shows what the agent is doing
@@ -1130,7 +1288,7 @@ xpop.addEventListener('mouseleave', hideX);
     function ensureBot(){ if(!bot) bot=addMsg('bot',''); return bot; }
     setPhase('Thinking','💭');                  // immediate feedback before the first event lands
     try{
-      const res = await fetch('/__chat/send', {
+      const res = await fetch('__chat/send', {
         method:'POST', headers:{'content-type':'application/json'},
         body: JSON.stringify({threadId: cur, message: text, kind, anchor,
           model: cfg.model, effort: cfg.effort, internet: cfg.internet})
