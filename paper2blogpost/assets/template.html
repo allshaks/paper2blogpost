@@ -705,6 +705,14 @@ function keyFormHtml(){
   </div>`;
 }
 
+// render any $…$ / $$…$$ inside a popup with the page's MathJax (may still be loading)
+function mjTypeset(el){
+  const MJ = window.MathJax; if (!MJ || !el) return Promise.resolve();
+  if (MJ.typesetPromise) return MJ.typesetPromise([el]).catch(()=>{});
+  if (MJ.startup && MJ.startup.promise) return MJ.startup.promise.then(()=> MJ.typesetPromise && MJ.typesetPromise([el]).catch(()=>{}));
+  return Promise.resolve();
+}
+
 function renderPop(ref){
   const cache = cachedSummary(ref);
   pop.innerHTML = `
@@ -716,6 +724,7 @@ function renderPop(ref){
   const body = pop.querySelector('.rp-body');
 
   const reveal = d => { body.innerHTML = bodyHtml(d); body.classList.add('open');
+                        mjTypeset(body);                                 // render $…$ in the summary
                         btn.textContent = 'Hide'; btn.disabled = false; };
   const toggle = () => {
     if (body.classList.contains('open')){ body.classList.remove('open'); btn.textContent='What is it about?'; }
@@ -794,6 +803,7 @@ function showPop(target){
   ref.context = localContext(target);   // location-specific, for grounded relevance
   clearTimeout(hideTimer);
   renderPop(ref); place(pop, target); pop.classList.add('show');
+  mjTypeset(pop).then(()=>place(pop, target));   // render $…$ in the citation immediately
 }
 function hidePop(){ if (pinned) return; hideTimer = setTimeout(()=>pop.classList.remove('show'), 200); }
 
@@ -903,6 +913,7 @@ function showX(link){
   xpop.innerHTML = `<div class="xp-label">${esc(p.label)}</div>${p.inner}<div class="xp-hint">click to jump ↵</div>`;
   place(xpop, link);
   xpop.classList.add('show');
+  mjTypeset(xpop).then(()=>place(xpop, link));   // render any raw $…$ (e.g. a thmbox/footnote preview), re-place
 }
 function hideX(){ xHideTimer = setTimeout(()=>xpop.classList.remove('show'), 180); }
 
@@ -1344,9 +1355,10 @@ xpop.addEventListener('mouseleave', hideX);
     let d=null; try{ d=await fetch('__chat/summary/'+tid).then(r=>r.json()); }catch{}
     if(my!==tpTok || !threadpop.classList.contains('show')) return;   // superseded or already closed
     if(!d || (!d.summary && !d.conclusion)){ hideThreadPop(); return; }
-    let html='<div class="tp-badge">💬 This chat</div><div class="tp-summary">'+esc(d.summary||'')+'</div>';
-    if(d.conclusion) html+='<div class="tp-concl"><b>Bottom line:</b> '+esc(d.conclusion)+'</div>';
+    let html='<div class="tp-badge">💬 This chat</div><div class="tp-summary">'+mdLite(d.summary||'')+'</div>';
+    if(d.conclusion) html+='<div class="tp-concl"><b>Bottom line:</b> '+mdLite(d.conclusion)+'</div>';
     threadpop.innerHTML=html; placePop(threadpop, mark);
+    typesetMath(threadpop).then(()=>{ if(threadpop.classList.contains('show')) placePop(threadpop, mark); });
   }
   mainEl.addEventListener('mouseover', e=>{
     const m=e.target.closest && e.target.closest('mark.q-highlight');
