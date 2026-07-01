@@ -87,6 +87,9 @@ command from a `systemd --user` service or a login script instead.
   on load. A passage thread also shows a **backlink bar** at the top of the chat (the
   quote + **Jump ↗**) that smooth-scrolls the article to the passage and flashes it —
   so you can always get from the conversation back to the spot it's about.
+  **Hovering** a highlight pops a one-line informal summary of that thread (+ a "Bottom
+  line:" sentence if it reached a conclusion) — Haiku-generated, cached per thread via
+  `GET …/__chat/summary/{tid}`.
 - **Live activity status** — while the agent works, a pill shows what it's doing
   right now (💭 Thinking · 🌐 Searching the web *"query"* · 📑 Reading the results ·
   📖 Reading · ⌘ Running a command · …), not just a spinner. The server taps
@@ -108,8 +111,12 @@ command from a `systemd --user` service or a login script instead.
   and a source link — **jump to it** in the paper (fuzzy-matched, since the article is a
   rewrite so the original phrasing rarely survives verbatim), **open** the external
   reference, or a note that it's from general knowledge. Definitions persist per-post in
-  `chat/definitions.json` and re-apply on load. Server: `POST …/__chat/define` (SSE, same
-  phase pills as chat) + `GET …/__chat/definitions`.
+  `chat/definitions.json` and re-apply on load. **Dedup**: before the LLM call, `_define`
+  folds the term (case / spaces / newlines / hyphens / underscores) and reuses an existing
+  definition if the same term was already defined — instant, no call. The definition text
+  is LaTeX-aware: formulas render with MathJax in the popup (server repairs unescaped-
+  backslash JSON). Server: `POST …/__chat/define` (SSE, same phase pills as chat) +
+  `GET …/__chat/definitions`.
 - **LaTeX math** — replies render math with the page's MathJax: inline `$…$` and
   displayed `$$…$$` (the persona tells the model to emit real LaTeX). `mdLite` pulls
   math spans out before the markdown passes so `*`/`_` inside an equation aren't

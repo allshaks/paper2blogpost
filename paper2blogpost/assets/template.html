@@ -428,6 +428,17 @@ mark.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
   animation:phpulse 1.05s infinite ease-in-out}
 #defpop .ph-dots i:nth-child(2){animation-delay:.16s}
 #defpop .ph-dots i:nth-child(3){animation-delay:.32s}
+/* hover a chat highlight → a concise summary of that thread */
+#threadpop{position:absolute; z-index:79; display:none; max-width:320px; background:var(--surface);
+  color:var(--ink); border:1px solid var(--rule); border-radius:12px; box-shadow:var(--shadow);
+  padding:12px 15px; font-family:var(--sans); font-size:13px; line-height:1.5}
+#threadpop.show{display:block}
+#threadpop .tp-badge{font-family:var(--sans); font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--link); margin-bottom:5px}
+#threadpop .tp-summary{color:var(--ink)}
+#threadpop .tp-concl{margin-top:8px; padding-top:8px; border-top:1px solid var(--rule); color:var(--ink-soft)}
+#threadpop .tp-concl b{color:var(--link); font-weight:600}
+#threadpop .tp-loading{color:var(--ink-faint); font-style:italic}
 </style>
 </head>
 <body>
@@ -467,6 +478,7 @@ mark.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
 <div id="refpop" role="dialog" aria-live="polite"></div>
 <div id="xpop" role="dialog" aria-live="polite"></div>
 <div id="defpop" role="dialog" aria-live="polite"></div>
+<div id="threadpop" role="dialog" aria-live="polite"></div>
 
 <!-- Chat (revealed only when the local companion server is running) -->
 <button id="chat-launch" title="Chat about this paper">💬 Ask&nbsp;Claude</button>
@@ -927,6 +939,7 @@ xpop.addEventListener('mouseleave', hideX);
   const anchorBar = document.getElementById('chat-anchor');
   const bubble = document.getElementById('sel-bubble');
   const defpop = document.getElementById('defpop');
+  const threadpop = document.getElementById('threadpop');
   const defs = {};   // id -> definition record, for the hover popups
   const modelSel = document.getElementById('chat-model');
   const effortSel= document.getElementById('chat-effort');
@@ -1192,17 +1205,19 @@ xpop.addEventListener('mouseleave', hideX);
   }
   // ---- definition popup (loading → result), document-anchored to a highlight ----
   let defHideT=null;
-  function positionDefPop(mark){
+  // place a popup just under a highlight (flip above if it would overflow), document-anchored
+  function placePop(pop, mark){
     if(!mark) return;
     const r=mark.getBoundingClientRect();
-    defpop.classList.add('show'); defpop.style.visibility='hidden';
-    const pw=defpop.offsetWidth, ph=defpop.offsetHeight;
+    pop.classList.add('show'); pop.style.visibility='hidden';
+    const pw=pop.offsetWidth, ph=pop.offsetHeight;
     let left=Math.max(8, Math.min(r.left, window.innerWidth-pw-8));
-    let top=r.bottom+8; if(top+ph>window.innerHeight && r.top-ph-8>4) top=r.top-ph-8;   // flip above if needed
-    defpop.style.left=(left+window.scrollX)+'px';
-    defpop.style.top=(top+window.scrollY)+'px';
-    defpop.style.visibility='';
+    let top=r.bottom+8; if(top+ph>window.innerHeight && r.top-ph-8>4) top=r.top-ph-8;
+    pop.style.left=(left+window.scrollX)+'px';
+    pop.style.top=(top+window.scrollY)+'px';
+    pop.style.visibility='';
   }
+  function positionDefPop(mark){ placePop(defpop, mark); }
   function showDefLoading(mark){
     defpop.innerHTML='<div class="dp-loading"><span class="dp-ic">💭</span><span class="dp-tx">Defining…</span>'
       +'<span class="ph-dots"><i></i><i></i><i></i></span></div>';
@@ -1318,6 +1333,30 @@ xpop.addEventListener('mouseleave', hideX);
     const m=e.target.closest && e.target.closest('mark.q-highlight');
     if(m && m.dataset.thread){ e.preventDefault(); open(); setActive(m.dataset.thread); }
   });
+  // hover a chat highlight → a concise, informal summary of that thread (+ a conclusion if any)
+  let tpTimer=null, tpTok=0;
+  function hideThreadPop(){ threadpop.classList.remove('show'); }
+  async function showThreadPop(mark){
+    const tid=mark.dataset.thread; if(!tid) return;
+    const my=++tpTok;
+    threadpop.innerHTML='<div class="tp-badge">💬 This chat</div><div class="tp-loading">Summarizing…</div>';
+    placePop(threadpop, mark);
+    let d=null; try{ d=await fetch('__chat/summary/'+tid).then(r=>r.json()); }catch{}
+    if(my!==tpTok || !threadpop.classList.contains('show')) return;   // superseded or already closed
+    if(!d || (!d.summary && !d.conclusion)){ hideThreadPop(); return; }
+    let html='<div class="tp-badge">💬 This chat</div><div class="tp-summary">'+esc(d.summary||'')+'</div>';
+    if(d.conclusion) html+='<div class="tp-concl"><b>Bottom line:</b> '+esc(d.conclusion)+'</div>';
+    threadpop.innerHTML=html; placePop(threadpop, mark);
+  }
+  mainEl.addEventListener('mouseover', e=>{
+    const m=e.target.closest && e.target.closest('mark.q-highlight');
+    if(m && m.dataset.thread){ clearTimeout(tpTimer); tpTimer=setTimeout(()=>showThreadPop(m), 380); }
+  });
+  mainEl.addEventListener('mouseout', e=>{
+    if(e.target.closest && e.target.closest('mark.q-highlight')){ clearTimeout(tpTimer); tpTimer=setTimeout(hideThreadPop, 260); }
+  });
+  threadpop.addEventListener('mouseenter', ()=>clearTimeout(tpTimer));
+  threadpop.addEventListener('mouseleave', hideThreadPop);
 
   async function doSend(opts){
     opts = opts || {};
