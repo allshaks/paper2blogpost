@@ -312,7 +312,11 @@ and fill "reference" with {{"num": <the [N] citation number if identifiable, els
 define it from your own knowledge. Set "source":"memory".
 
 Keep "definition" to 1-3 clear, colloquial sentences — as readable as a good blog post, \
-explaining any jargon in passing. Do not hedge about which tier you used; just fill the fields.
+explaining any jargon in passing. Do not hedge about which tier you used; just fill the fields. \
+Write any formulas or symbols in the definition as LaTeX — inline math in single dollar signs \
+($...$) and any displayed formula in double dollar signs ($$...$$), using real commands \
+(\\mathbf, \\sum, _, ^, \\alpha, …); the popup renders them. Keep the JSON valid: escape each \
+LaTeX backslash as \\\\ inside the string.
 
 The reader's immediate context (the paragraph around their selection):
 "{context}"
@@ -324,19 +328,25 @@ Respond with ONLY a single JSON object and nothing else:
 
 
 def _parse_define(text, term):
-    """Pull the JSON object out of the model's reply, defensively."""
+    """Pull the JSON object out of the model's reply, defensively. LaTeX in the
+    definition often reaches us with unescaped backslashes (invalid JSON), so if the
+    raw parse fails, retry with lone backslashes doubled."""
     s = (text or "").strip()
     i, j = s.find("{"), s.rfind("}")
     if i >= 0 and j > i:
-        try:
-            obj = json.loads(s[i:j + 1])
+        blob = s[i:j + 1]
+        # a backslash NOT starting a valid JSON escape (\" \\ \/ \b \f \n \r \t \u) → double it
+        repaired = re.sub(r'\\(?![\\"/bfnrtu])', r'\\\\', blob)
+        for candidate in (blob, repaired):
+            try:
+                obj = json.loads(candidate)
+            except Exception:
+                continue
             if isinstance(obj, dict) and obj.get("definition"):
                 obj.setdefault("term", term)
                 if obj.get("source") not in ("paper", "reference", "memory"):
                     obj["source"] = "memory"
                 return obj
-        except Exception:
-            pass
     # couldn't parse structured output — fall back to treating the reply as a plain definition
     return {"term": term, "definition": s or "(no definition returned)", "source": "memory"}
 

@@ -4,6 +4,21 @@ Running log of what's shipped and what's queued, so requested features don't get
 
 ## Shipped
 
+- **Collapsible table of contents** (2026-07-01): a `«` in the TOC hides it (slides off-screen
+  + fades); a floating `☰ Contents` button brings it back. State remembered in localStorage;
+  hidden on mobile as before.
+- **LaTeX in Define popups** (2026-07-01): the Define lookup now emits LaTeX for formulas
+  (`$…$` / `$$…$$`), and the definition popup renders it with MathJax (same math-aware
+  `mdLite` + `typesetMath` path as the chat, re-placing after typeset). The server also
+  repairs the common invalid-JSON case where the model leaves LaTeX backslashes unescaped
+  (try raw parse → retry with lone backslashes doubled). Verified: defining "cosine
+  similarity" renders its formula in the popup.
+- **Footnote styling** (2026-07-01): the model already emits blog-style footnotes (a `<sup>`
+  xref marker + a `<p class="footnote">` note near its reference), but the template never
+  styled them, so they rendered at body size. Added `.footnote` (smaller, muted, left rule) +
+  a shrunk `<sup>` marker, a "Footnote" hover-preview label, and authoring conventions.
+  Because the markup already exists in posts, an existing post gets this fixed by `--upgrade`
+  alone (no re-translation needed).
 - **Theorem-environment boxes** (2026-07-01): first-class Definition / Theorem / Lemma /
   Proposition / Corollary / Proof / Remark / Example / Assumption / Claim / Conjecture boxes
   in the template — a colored left rule + bold label (style "C"), colour by family (terracotta

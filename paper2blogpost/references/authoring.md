@@ -192,8 +192,27 @@ and the scoring rule is just <a class="xref" data-target="eq-1">Equation 1</a>.
 ```
 
 The `data-target` must match the `id` of a `<figure>`, a `<div class="equation">`,
-or a `<div class="table-wrap">` somewhere in the post. Only wrap genuine
-references to a specific numbered object — don't turn every word into a link.
+a `<div class="table-wrap">`, a `<div class="thmbox">`, or a footnote (below) somewhere
+in the post. Only wrap genuine references to a specific numbered object — don't turn
+every word into a link.
+
+## Footnotes — small, placed near their reference
+
+A blog post has no page bottoms, so a paper's footnotes become **inline notes set
+smaller than the body**, dropped right after the paragraph that references them. The
+in-text marker is a superscript that reuses the cross-reference system (so it hovers to a
+preview and clicks to jump), and the note itself is a `.footnote` paragraph:
+
+```html
+<p>… as several authors have argued.<sup><a class="xref" data-target="fn-1">1</a></sup></p>
+<p class="footnote" id="fn-1"><strong>1.</strong> Saphra and Wiegreffe
+<a class="cite" data-ref="ref-134">[134]</a> point out that … </p>
+```
+
+The template renders `.footnote` smaller and muted and shrinks the `<sup>` marker — you
+don't style anything yourself. Keep **every** footnote (they're part of the content), and
+number them as the paper does. Footnotes may contain citations, math, and links like any
+other prose.
 
 ## "Key idea" callouts (use sparingly, where they earn their place)
 

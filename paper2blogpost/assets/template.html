@@ -73,10 +73,20 @@ body.chat-resizing #controls{ transition:none !important; }
   position:fixed; top:0; left:0; height:100vh; width:250px;
   padding:80px 18px 40px 26px; overflow-y:auto;
   font-family:var(--sans); font-size:13.5px; line-height:1.4;
-  opacity:.30; transition:opacity .35s ease, background .35s ease;
+  opacity:.30; transition:opacity .35s ease, background .35s ease, transform .3s cubic-bezier(.4,0,.2,1);
   background:transparent; z-index:40;
 }
 #toc:hover{opacity:1; background:linear-gradient(90deg,var(--bg-tint) 70%, transparent)}
+/* collapse / expand the table of contents */
+#toc-collapse{position:absolute; top:76px; right:14px; background:none; border:none; cursor:pointer;
+  font-family:var(--sans); font-size:15px; line-height:1; color:var(--ink-faint); padding:4px 6px; border-radius:6px}
+#toc-collapse:hover{color:var(--ink); background:var(--surface)}
+#toc-show{position:fixed; top:14px; left:14px; z-index:41; display:none; align-items:center; gap:6px;
+  font-family:var(--sans); font-size:13px; cursor:pointer; background:var(--surface); color:var(--ink-soft);
+  border:1px solid var(--rule); border-radius:999px; padding:6px 12px; box-shadow:var(--shadow); transition:.2s}
+#toc-show:hover{color:var(--ink); transform:translateY(-1px)}
+body.toc-collapsed #toc{transform:translateX(-108%); opacity:0; pointer-events:none}
+body.toc-collapsed #toc-show{display:inline-flex}
 #toc .toc-title{font-weight:700; text-transform:uppercase; letter-spacing:.08em;
   font-size:11px; color:var(--ink-faint); margin-bottom:14px}
 #toc ul{list-style:none; margin:0; padding:0}
@@ -136,6 +146,21 @@ section{opacity:1}
 .proofbox{margin:18px 0; color:var(--ink-soft)}
 .proofbox .proof-label{font-style:italic}
 .proofbox .qed{float:right; font-style:normal; margin-left:8px}
+
+/* ---- footnotes (a blog has no page bottoms, so they're small notes placed near
+   their reference; the marker is a superscript xref that previews + jumps) ---- */
+sup{font-size:.72em; line-height:0}
+.footnote{font-size:15px; line-height:1.55; color:var(--ink-soft);
+  margin:16px 0; padding-left:15px; border-left:2px solid var(--rule)}
+.footnote strong{font-family:var(--sans); font-weight:600; font-size:12.5px;
+  color:var(--ink-faint); margin-right:3px}
+
+/* ---- code / algorithm blocks ---- */
+pre{background:var(--bg-tint); border:1px solid var(--rule); border-radius:10px;
+  padding:14px 16px; overflow-x:auto; margin:12px 0 4px; line-height:1.5}
+pre code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13.5px;
+  color:var(--ink); white-space:pre}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em}
 
 /* ---- figures ---- */
 figure{margin:40px 0; text-align:center}
@@ -267,7 +292,7 @@ a.xref:hover{background:var(--accent-soft); border-radius:4px}
 #references a.ref-find:hover, #refpop a.ref-find:hover{color:var(--link)}
 #refpop .rp-cite a{color:var(--link); overflow-wrap:anywhere}
 
-@media (max-width:1100px){#toc{display:none}}
+@media (max-width:1100px){#toc, #toc-show{display:none !important}}
 footer{font-family:var(--sans); font-size:13px; color:var(--ink-faint);
   text-align:center; margin-top:60px}
 
@@ -388,6 +413,8 @@ mark.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
 #defpop.show{display:block}
 #defpop .dp-term{font-weight:700; font-size:14px; margin-bottom:5px; color:var(--accent)}
 #defpop .dp-def{color:var(--ink); margin-bottom:10px}
+#defpop .dp-def mjx-container{max-width:100%; overflow-x:auto; overflow-y:hidden}
+#defpop .dp-def mjx-container[display="true"]{margin:.45em 0 !important}
 #defpop .dp-src{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px;
   border-top:1px solid var(--rule); padding-top:9px}
 #defpop .dp-badge{color:var(--ink-soft); font-weight:600}
@@ -411,11 +438,13 @@ mark.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
 </div>
 
 <nav id="toc" aria-label="Table of contents">
+  <button id="toc-collapse" title="Hide contents" aria-label="Hide contents">&laquo;</button>
   <div class="toc-title">Contents</div>
   <ul>
     {{TOC}}
   </ul>
 </nav>
+<button id="toc-show" title="Show contents" aria-label="Show table of contents">&#9776;&nbsp;Contents</button>
 
 <main>
   <header class="hero">
@@ -500,6 +529,14 @@ document.getElementById('themeBtn').onclick = () => {
   root.setAttribute('data-theme', next);
   localStorage.setItem('p2b-theme', next);
 };
+
+/* ---------- TOC collapse / expand (remembered) ---------- */
+const TOCKEY = 'p2b-toc-collapsed';
+if (localStorage.getItem(TOCKEY) === '1') document.body.classList.add('toc-collapsed');
+const setTocCollapsed = c => { document.body.classList.toggle('toc-collapsed', c);
+  localStorage.setItem(TOCKEY, c ? '1' : '0'); };
+document.getElementById('toc-collapse')?.addEventListener('click', () => setTocCollapsed(true));
+document.getElementById('toc-show')?.addEventListener('click', () => setTocCollapsed(false));
 
 /* ---------- TOC scroll-spy ---------- */
 const tocLinks = [...document.querySelectorAll('#toc a')];
@@ -837,6 +874,10 @@ function previewFor(targetId){
     label = (t.querySelector('.thm-label')?.textContent || 'Statement').trim();
     const c = t.cloneNode(true); const l = c.querySelector('.thm-label'); if (l) l.remove();
     inner = `<div class="xp-inner">${c.innerHTML}</div>`;
+  } else if (t.classList.contains('footnote')){
+    label = 'Footnote';
+    const c = t.cloneNode(true); const s = c.querySelector('strong'); if (s) s.remove();
+    inner = `<div class="xp-inner">${c.innerHTML}</div>`;
   } else {
     inner = `<div class="xp-inner">${t.innerHTML}</div>`;
   }
@@ -974,9 +1015,10 @@ xpop.addEventListener('mouseleave', hideX);
   // Typeset the math in a freshly-rendered message using the page's MathJax (which may
   // still be loading — wait on its startup promise if so).
   function typesetMath(el){
-    const MJ=window.MathJax; if(!MJ||!el) return;
-    if(MJ.typesetPromise){ MJ.typesetPromise([el]).catch(()=>{}); }
-    else if(MJ.startup&&MJ.startup.promise){ MJ.startup.promise.then(()=>{ if(MJ.typesetPromise) MJ.typesetPromise([el]).catch(()=>{}); }); }
+    const MJ=window.MathJax; if(!MJ||!el) return Promise.resolve();
+    if(MJ.typesetPromise) return MJ.typesetPromise([el]).catch(()=>{});
+    if(MJ.startup&&MJ.startup.promise) return MJ.startup.promise.then(()=>MJ.typesetPromise&&MJ.typesetPromise([el]).catch(()=>{}));
+    return Promise.resolve();
   }
   function newId(){ return 't'+Math.random().toString(36).slice(2,9)+Date.now().toString(36); }
   function clearMsgs(empty){ msgs.innerHTML = empty
@@ -1186,7 +1228,7 @@ xpop.addEventListener('mouseleave', hideX);
       src='<span class="dp-badge">🧠 From general knowledge</span><span class="dp-note">— not defined in this paper</span>';
     }
     defpop.innerHTML='<div class="dp-term">'+esc(rec.term||'')+'</div>'
-      +'<div class="dp-def">'+esc(rec.definition||'')+'</div><div class="dp-src">'+src+'</div>';
+      +'<div class="dp-def">'+mdLite(rec.definition||'')+'</div><div class="dp-src">'+src+'</div>';
     const jump=defpop.querySelector('.dp-jump');
     if(jump) jump.onclick=(ev)=>{ ev.preventDefault();
       if(rec.source==='paper'){ jumpToQuote(rec.paper_quote, rec.term); }
@@ -1194,6 +1236,8 @@ xpop.addEventListener('mouseleave', hideX);
       hideDefPopup();
     };
     positionDefPop(mark);
+    // render any $…$ / $$…$$ in the definition, then re-place (typesetting changes the height)
+    typesetMath(defpop).then(()=>{ if(defpop.classList.contains('show')) positionDefPop(mark); });
   }
   function hideDefPopup(){ defpop.classList.remove('show'); }
   // hover a defined term → show its definition (every time)
