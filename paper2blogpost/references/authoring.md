@@ -108,6 +108,38 @@ math should get the math. You can *add* a plain-language gloss alongside it:
 <p>In words: how badly the model predicted each example, averaged over all of them.</p>
 ```
 
+## Notation — reproduce it *exactly*, styling included
+
+**Notation is content, not formatting.** The register changes; the symbols never do.
+Reproduce every symbol the way the paper writes it — the same letters, the same case,
+the same accents, and the *same weight and style*. Getting this subtly wrong quietly
+corrupts the math, and a careful reader will notice immediately.
+
+The one that gets dropped most often is **boldface**, and it's the one that matters
+most: in almost every paper a **bold** symbol is a vector, matrix, or tensor, while the
+same letter in plain italic is a scalar. `$\mathbf{x}$` (a vector) and `$x$` (one of its
+components) are *different objects* — flattening the bold away is a real error, not a
+cosmetic one. So:
+
+- **Bold math stays bold.** Bold Latin letters → `\mathbf{x}`, `\mathbf{W}`; bold Greek →
+  `\boldsymbol{\theta}`, `\boldsymbol{\mu}`. A bolded operator or word in running prose →
+  wrap it in `<strong>`. Never demote a bold symbol to a plain one (or vice-versa).
+- **Every other style is load-bearing too**, so keep it: blackboard-bold sets
+  (`\mathbb{R}`, `\mathbb{E}`), calligraphic (`\mathcal{L}`, `\mathcal{N}`), Roman/upright
+  for named operators and units (`\mathrm{softmax}`, `\mathrm{d}x`), sans-serif, Fraktur.
+- **Accents, sub/superscripts, primes, stars:** `\hat{y}`, `\bar{x}`, `\tilde{p}`,
+  `\dot{x}`, `x_i^{(t)}`, `\theta'`, `W^\top`, `A^{*}`. Copy them across verbatim.
+- **Use the paper's exact glyphs.** If it writes $\theta$ don't switch to $w$; if it uses
+  $\odot$ for elementwise product or $\langle\cdot,\cdot\rangle$ for an inner product,
+  keep that symbol — don't paraphrase notation into words or "normalize" it to something
+  you'd have picked.
+- **Symbols in prose are still math.** When you mention a variable mid-sentence, wrap it in
+  `$…$` (e.g. "each token $x_i$ is projected by $\mathbf{W}_q$") so the italic/bold renders
+  correctly — don't type a bare letter, which loses the styling and looks like ordinary text.
+
+When unsure, mirror the source glyph-for-glyph and weight-for-weight. Colloquial phrasing
+around the math is encouraged; altered math is not.
+
 ## Cross-references — make "see Figure 3" come alive
 
 A scientific paper is a web of "as shown in Figure 2", "(Eq. 1)", "see Table 3".

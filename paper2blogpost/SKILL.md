@@ -118,6 +118,13 @@ For each section, following `references/authoring.md`:
 - Drop in the figures this section discusses (next step), with friendly captions.
 - Keep equations as real math: wrap display equations in
   `<div class="equation" id="eq-N">$$…$$</div>` and add a plain-language gloss.
+- **Reproduce notation exactly — styling included.** Symbols are content, not
+  formatting: keep the paper's exact glyphs, case, accents, sub/superscripts, and
+  especially their **weight**. A **bold** symbol is a vector/matrix (`$\mathbf{x}$`,
+  `$\boldsymbol{\theta}$`) and means something different from the plain scalar `$x$` —
+  never flatten it. Same for `\mathbb{}`, `\mathcal{}`, `\hat{}`, `\bar{}`, `^\top`, etc.
+  Wrap in-prose variables in `$…$` so their italic/bold actually renders. Colloquial
+  wording around the math is great; *changed* math is a bug. See `references/authoring.md`.
 - **Wire up cross-references.** When the text says "Figure 3", "Eq. 1", "Table 2",
   wrap that mention in `<a class="xref" data-target="figure-3">…</a>` so the reader
   can hover to preview it and click to jump. This is a big part of what makes the
@@ -225,6 +232,8 @@ change the register. Concretely:
   analogies where they genuinely help a reader *get* it.
 - Keep the numbers, the caveats, the "but only under condition Z." Friendliness
   never means hand-waving away the parts that make it science.
+- Keep the notation exact — same symbols, same **boldface** (a bold `$\mathbf{x}$` is a
+  vector, not the scalar `$x$`). You reword the prose, never the math.
 - Don't add hype or editorialize beyond what the paper supports. Warm and honest,
   not breathless.
 

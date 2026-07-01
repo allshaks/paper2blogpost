@@ -4,6 +4,17 @@ Running log of what's shipped and what's queued, so requested features don't get
 
 ## Shipped
 
+- **Exact-notation fidelity** (2026-07-01): the skill now explicitly insists that notation is
+  *content, not formatting* — same glyphs, case, accents, sub/superscripts, and **weight**. A
+  bold `$\mathbf{x}$` (vector/matrix) must never be flattened to the scalar `$x$`. Guidance
+  added to `SKILL.md` (translate step + voice) and a full `references/authoring.md` subsection
+  (`\mathbf`/`\boldsymbol`/`<strong>`, `\mathbb`/`\mathcal`/`\mathrm`, accents, `^\top`, wrap
+  in-prose variables in `$…$`). Guides future runs; won't retro-fix already-flattened posts.
+- **`assemble.py --upgrade`** (2026-07-01): re-skins an *already-assembled* post to the current
+  template with no `build/` dir — extracts the filled content (TOC, hero, article, references,
+  `__REFS__`/`__PAPER__`) off stable structural anchors, re-stitches into the latest template,
+  backs up `index.html` → `.bak`. Lets old posts pick up template features (e.g. Define) in
+  place. Verified: round-trip is content-lossless and repeated upgrades are idempotent.
 - **Section-by-section translation** into colloquial register (not summary, not dumbed-down).
 - **Pixel-faithful figure extraction** (region-render; handles caption-above *and* caption-below layouts).
 - **Tables rebuilt as real HTML** (not screenshots).
