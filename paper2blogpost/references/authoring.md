@@ -140,6 +140,43 @@ cosmetic one. So:
 When unsure, mirror the source glyph-for-glyph and weight-for-weight. Colloquial phrasing
 around the math is encouraged; altered math is not.
 
+## Formal statements — Definition / Theorem / Proof boxes
+
+Math papers are full of formal environments — Definition, Theorem, Lemma, Proposition,
+Corollary, Proof, Remark, Example… Give each its own **theorem box** so they stand out and
+stay scannable (and so a "by Theorem 2.1" mention can hover-preview and jump to it). The
+template styles them as a colored left rule + a bold label; the *class* picks the colour.
+
+```html
+<div class="thmbox theorem" id="thm-2-1">
+  <span class="thm-label">Theorem 2.1 <span class="thm-name">(Soundness)</span></span>
+  <p>Every causal model admits a unique minimal abstraction $\tau$ that preserves all
+  interventions.</p>
+</div>
+```
+
+- **The class after `thmbox` is the environment**, and it sets the colour automatically:
+  - *results* → terracotta: `theorem`, `lemma`, `proposition`, `corollary`, `claim`,
+    `conjecture`, `fact`
+  - *foundations* → teal: `definition`, `assumption`
+  - *commentary* → muted grey: `remark`, `example`, `note`, `observation`
+- **Number it as the paper does** (`Theorem 2.1`) and give it an `id` (`thm-2-1`, `def-1-3`,
+  …) so `<a class="xref" data-target="thm-2-1">Theorem 2.1</a>` mentions hover + jump to it.
+- The optional `<span class="thm-name">(Soundness)</span>` holds the named title some
+  statements carry.
+- **The statement is formal content — reproduce it faithfully, notation and all** (see the
+  notation rules above). Add a colloquial gloss *around* it if it helps ("in plain terms,
+  …"), but don't reword the statement itself — same discipline as equations.
+
+Proofs get a lighter treatment — a run-in *Proof.* and a ∎ to close:
+
+```html
+<div class="proofbox">
+  <p><span class="proof-label">Proof.</span> By induction on the depth of the causal DAG;
+  the base case is immediate. <span class="qed">∎</span></p>
+</div>
+```
+
 ## Cross-references — make "see Figure 3" come alive
 
 A scientific paper is a web of "as shown in Figure 2", "(Eq. 1)", "see Table 3".

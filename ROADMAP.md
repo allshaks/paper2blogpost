@@ -4,6 +4,14 @@ Running log of what's shipped and what's queued, so requested features don't get
 
 ## Shipped
 
+- **Theorem-environment boxes** (2026-07-01): first-class Definition / Theorem / Lemma /
+  Proposition / Corollary / Proof / Remark / Example / Assumption / Claim / Conjecture boxes
+  in the template — a colored left rule + bold label (style "C"), colour by family (terracotta
+  = results, teal = foundations, grey = commentary), proofs with a ∎. They're cross-reference
+  targets too (hover "Theorem 2.1" → preview, click → jump). Authoring conventions in
+  `SKILL.md` + `authoring.md`. Replaces the old failure mode where a math paper's boxes were
+  ad-hoc per-post CSS that vanished on any re-generation/upgrade. (Applies to *new* posts;
+  an existing post needs re-translating to wrap its statements in the boxes.)
 - **Exact-notation fidelity** (2026-07-01): the skill now explicitly insists that notation is
   *content, not formatting* — same glyphs, case, accents, sub/superscripts, and **weight**. A
   bold `$\mathbf{x}$` (vector/matrix) must never be flattened to the scalar `$x$`. Guidance

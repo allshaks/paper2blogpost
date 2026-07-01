@@ -121,6 +121,22 @@ section{opacity:1}
 .callout .callout-label{font-family:var(--sans); font-size:12px; font-weight:700;
   text-transform:uppercase; letter-spacing:.08em; color:var(--accent); display:block; margin-bottom:6px}
 
+/* ---- theorem environments (Definition / Theorem / Lemma / Proof / …) ----
+   A colored left rule + a bold colored label. Colour encodes the family:
+   terracotta = results (default), teal = foundations, muted = commentary. */
+.thmbox{--thm-c:var(--accent);
+  border-left:3px solid var(--thm-c); padding:2px 0 2px 17px; margin:26px 0; scroll-margin-top:40px}
+.thmbox.definition, .thmbox.assumption{--thm-c:var(--link)}
+.thmbox.remark, .thmbox.example, .thmbox.note, .thmbox.observation{--thm-c:var(--ink-faint)}
+.thmbox > .thm-label{display:block; font-family:var(--sans); font-weight:700; font-size:14px;
+  color:var(--thm-c); margin-bottom:4px}
+.thmbox > .thm-label .thm-name{font-weight:600; color:var(--ink-soft)}
+.thmbox p{margin:0 0 10px}
+.thmbox p:last-child{margin-bottom:0}
+.proofbox{margin:18px 0; color:var(--ink-soft)}
+.proofbox .proof-label{font-style:italic}
+.proofbox .qed{float:right; font-style:normal; margin-left:8px}
+
 /* ---- figures ---- */
 figure{margin:40px 0; text-align:center}
 figure img{max-width:100%; height:auto; border-radius:12px; box-shadow:var(--shadow);
@@ -238,7 +254,7 @@ a.xref:hover{background:var(--accent-soft); border-radius:4px}
 
 /* equations as jump targets */
 .equation{margin:24px 0; scroll-margin-top:80px}
-.equation:target, figure:target, .table-wrap:target{scroll-margin-top:80px}
+.equation:target, figure:target, .table-wrap:target, .thmbox:target{scroll-margin-top:80px}
 
 /* ---- bibliography ---- */
 #references{border-top:1px solid var(--rule); margin-top:80px; padding-top:24px}
@@ -817,6 +833,10 @@ function previewFor(targetId){
   } else if (t.classList.contains('equation')){
     label = 'Equation';
     inner = `<div class="xp-inner">${t.innerHTML}</div>`;
+  } else if (t.classList.contains('thmbox')){
+    label = (t.querySelector('.thm-label')?.textContent || 'Statement').trim();
+    const c = t.cloneNode(true); const l = c.querySelector('.thm-label'); if (l) l.remove();
+    inner = `<div class="xp-inner">${c.innerHTML}</div>`;
   } else {
     inner = `<div class="xp-inner">${t.innerHTML}</div>`;
   }

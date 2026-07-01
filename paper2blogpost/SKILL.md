@@ -125,6 +125,12 @@ For each section, following `references/authoring.md`:
   never flatten it. Same for `\mathbb{}`, `\mathcal{}`, `\hat{}`, `\bar{}`, `^\top`, etc.
   Wrap in-prose variables in `$…$` so their italic/bold actually renders. Colloquial
   wording around the math is great; *changed* math is a bug. See `references/authoring.md`.
+- **Formal statements get theorem boxes.** A Definition / Theorem / Lemma / Proposition /
+  Corollary / Proof / Remark / Example → a `<div class="thmbox <environment>" id="thm-N">`
+  with a `<span class="thm-label">`. The class sets the colour (results = terracotta,
+  foundations = teal, commentary = grey); proofs use `.proofbox` + a ∎. Reproduce the
+  statement faithfully (it's formal content); gloss it colloquially *around* the box, not
+  inside. See `references/authoring.md`.
 - **Wire up cross-references.** When the text says "Figure 3", "Eq. 1", "Table 2",
   wrap that mention in `<a class="xref" data-target="figure-3">…</a>` so the reader
   can hover to preview it and click to jump. This is a big part of what makes the
