@@ -108,6 +108,11 @@ math should get the math. You can *add* a plain-language gloss alongside it:
 <p>In words: how badly the model predicted each example, averaged over all of them.</p>
 ```
 
+The `id` does double duty: besides being a cross-reference target, in chat mode it lets a
+reader **click the equation to ask Claude about it or define it** (the template snapshots
+the equation's LaTeX and hands the model the exact math). So give *every* display equation
+an `id="eq-N"`, even one nothing links to — it costs nothing and makes the math interactive.
+
 ## Notation — reproduce it *exactly*, styling included
 
 **Notation is content, not formatting.** The register changes; the symbols never do.

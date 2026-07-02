@@ -15,9 +15,17 @@ Expected build layout (created by the skill as it works):
   <build>/refs.json              {"ref-N": {num, citation, summary, relevance}}
   <build>/figures/               figure images referenced by the sections
 
+Two post modes share this one template: 'full' (default — a complete colloquial
+translation, nothing dropped) and 'concise' (a short LessWrong-style summary). The
+mode rides on a `body.concise` class so the design (Summary badge, TL;DR box) is
+styled centrally; pass --mode or set "mode" in meta.json. --upgrade preserves it.
+
 Usage:
-  # assemble a fresh post from a build dir:
+  # assemble a fresh post from a build dir (full is the default):
   python assemble.py --build ./build --template ../assets/template.html --out ./build/index.html
+
+  # assemble a concise summary post:
+  python assemble.py --build ./build --out ./build/index.html --mode concise
 
   # re-skin an ALREADY-assembled post to the current template (no build/ dir needed) —
   # picks up template improvements (new features, fixes) in place; backs up index.html:
@@ -44,9 +52,14 @@ def fill(template: str, repl: dict) -> str:
     return PLACEHOLDER_RE.sub(lambda m: repl.get(m.group(0), m.group(0)), template)
 
 
-def build_post(build: Path, template_path: Path, out: Path):
+def build_post(build: Path, template_path: Path, out: Path, mode: str = None):
     template = template_path.read_text()
     meta = json.loads((build / "meta.json").read_text())
+    # 'full' (default) keeps all content; 'concise' emits a summary post. The mode
+    # rides on a body class so the template styles both from one file (Summary badge,
+    # TL;DR box). --mode overrides; else meta.json's "mode"; else full.
+    mode = mode or meta.get("mode") or "full"
+    body_class = ' class="concise"' if mode == "concise" else ""
 
     section_files = sorted((build / "sections").glob("*.html"))
     if not section_files:
@@ -79,6 +92,7 @@ def build_post(build: Path, template_path: Path, out: Path):
     paper_data = {"title": title, "id": paper_id}
 
     out_html = fill(template, {
+        "{{BODY_CLASS}}": body_class,
         "{{TITLE}}": title,
         "{{HERO_TITLE}}": meta.get("hero_title", title),
         "{{DEK}}": meta.get("dek", ""),
@@ -89,10 +103,25 @@ def build_post(build: Path, template_path: Path, out: Path):
         "{{REFS_DATA}}": json.dumps(refs_data, ensure_ascii=False).replace("</", "<\\/"),
         "{{PAPER_DATA}}": json.dumps(paper_data, ensure_ascii=False).replace("</", "<\\/"),
     })
+    out.parent.mkdir(parents=True, exist_ok=True)   # so --out can point anywhere (e.g. the central store)
     out.write_text(out_html)
+
+    # Make the post chat-ready automatically: drop the paper's full text where the chat
+    # server grounds on it. Always the FULL extracted text — even for a concise summary
+    # post, the chat should be able to answer about the parts the summary left out. (The
+    # server still creates CLAUDE.md / threads.json itself, lazily.)
+    grounded = False
+    full_txt = build / "text" / "full.txt"
+    if full_txt.exists():
+        chat_dir = out.parent / "chat"
+        chat_dir.mkdir(parents=True, exist_ok=True)
+        (chat_dir / "paper.md").write_text(full_txt.read_text())
+        grounded = True
+
     referenced = set(re.findall(r'<img[^>]+src=["\'](figures/[^"\']+)["\']', out_html))
-    print(f"Wrote {out}  ({len(section_files)} sections, {len(refs_data)} refs, "
-          f"{len(referenced)} figures referenced).")
+    print(f"Wrote {out}  [{mode}]  ({len(section_files)} sections, {len(refs_data)} refs, "
+          f"{len(referenced)} figures referenced"
+          f"{'; chat grounded' if grounded else '; no build/text/full.txt → chat ungrounded'}).")
 
 
 # --- upgrade: pull the filled content back out of an assembled post, re-stitch into
@@ -106,6 +135,9 @@ def extract_fields(html: str) -> dict:
         # re-inserting doesn't stack blank lines (keeps repeated upgrades idempotent)
         return m.group(1).strip() if m else None
     return {
+        # preserve full/concise across a re-skin: carry the body's mode class forward.
+        # Always a string (never None) so {{BODY_CLASS}} is never left as a literal token.
+        "{{BODY_CLASS}}":      ' class="concise"' if re.search(r'<body[^>]*\sclass="[^"]*\bconcise\b', html, re.I) else "",
         "{{TITLE}}":           grab(r"<title>(.*?)</title>"),
         "{{TOC}}":             grab(r'<nav[^>]*id="toc"[^>]*>.*?<ul>(.*?)</ul>'),
         "{{HERO_TITLE}}":      grab(r'<header[^>]*class="hero"[^>]*>.*?<h1[^>]*>(.*?)</h1>'),
@@ -161,6 +193,10 @@ def main():
     ap.add_argument("--build", help="build dir (sections/, meta.json, refs.json, references_list.html)")
     ap.add_argument("--template", help="template.html (default: the skill's own assets/template.html)")
     ap.add_argument("--out", help="output index.html (assembly mode)")
+    ap.add_argument("--mode", choices=["full", "concise"], default=None,
+                    help="'full' (default) keeps every bit of content; 'concise' marks the post as a "
+                         "LessWrong-style summary (Summary badge + body.concise styling). If omitted, "
+                         "falls back to meta.json's \"mode\", else full.")
     ap.add_argument("--upgrade", metavar="POST",
                     help="re-skin an already-assembled post (its folder or index.html) to the current "
                          "template — no build/ dir needed. Backs up the old index.html to index.html.bak.")
@@ -171,7 +207,7 @@ def main():
         return upgrade_post(args.upgrade, template_path)
     if not args.build or not args.out:
         ap.error("assembly needs --build and --out (or use --upgrade to re-skin an existing post).")
-    build_post(Path(args.build), template_path, Path(args.out))
+    build_post(Path(args.build), template_path, Path(args.out), mode=args.mode)
 
 
 if __name__ == "__main__":

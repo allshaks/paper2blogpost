@@ -4,6 +4,96 @@ Running log of what's shipped and what's queued, so requested features don't get
 
 ## Shipped
 
+- **Reference summaries cached per-reference, not per-citation** (2026-07-02): "What is
+  it about?" used to key its *whole* cached blob (summary + relevance) by the citation's
+  surrounding passage — so the same work cited in N places re-ran the full web-search
+  summary N times. Split the cache: the **summary** ("what is it about") is keyed **per
+  reference** and reused everywhere (generated once); only the **relevance** ("why it's
+  here") stays keyed **per citation site**. A known reference cited again shows its summary
+  instantly and generates just the location note via a cheap **no-web-search** call
+  (`generateRelevance`); with no key or on error it degrades to summary-only (the note is
+  never a blocker). Verified in-browser: two different citation sites of a 10×-cited ref
+  reuse one summary with no re-prompt, and the note fails gracefully to summary-only.
+  (`references/reference-popups.md` updated.)
+- **CLAUDE.md "auto-generated" banner** (2026-07-02): the per-post `chat/CLAUDE.md` (the
+  derived grounding doc = GUIDE + `paper.md`, rebuilt on every server start) now leads with
+  an HTML-comment banner saying it's auto-generated and to edit `paper.md` instead — so a
+  curious person browsing the `chat/` folder sees the source/derived relationship. (The
+  duplication with `paper.md` is deliberate: a tool-less `claude -p` can't read `paper.md`,
+  so the text must live in the auto-loaded `CLAUDE.md`; `paper.md` is the stable source, the
+  server-owned `CLAUDE.md` is a regenerable cache that lets the GUIDE evolve across posts.)
+- **Menu redesign + back-link, chat-message LaTeX, TOC reclaims space** (2026-07-02):
+  three reading/navigation polishes. (1) The server's **landing page** was redesigned from
+  a plain list into a warm menu that matches the posts (serif header, cards with each
+  post's title + dek + a "Summary" badge for concise posts, hover arrows, light/dark) —
+  `chat-server.py` now extracts title/dek/mode via `_meta_of`; each post also gained a
+  **"← Posts"** link (in the top-right controls, shown only when served via `body.chat-on`)
+  to jump back to that menu. (2) **The reader's own chat messages now render LaTeX**
+  (`$…$` / `$$…$$`), not just the replies — the math-protection was factored into a shared
+  `protectMath()`, replies use `mdLite` (markdown+math) and user messages a new `mdMath`
+  (math only, so literally-typed text isn't markdown-mangled). (3) **Collapsing the TOC now
+  hands its space to the reading column** — `body.toc-collapsed main` widens from
+  `--maxw` (720) to `--maxw-wide` (864), and the chat-squeeze left guard drops to 0 when
+  the TOC is hidden (no sidebar to clear). Verified in-browser (light+dark, 1200px):
+  redesigned menu, back-link (`href="/"`), user-bubble math (block + inline, white on
+  teal), and the column measurably widening 720→864 on collapse.
+- **Click an equation → ask/define it** (2026-07-02): rendered MathJax is an unselectable
+  SVG, so instead of fighting selection, a **click** on any display `<div class="equation">`
+  opens the select-bubble (Ask + Define; "Rewrite" hidden — meaningless for math). It hands
+  Claude the equation's **exact LaTeX**, not a lossy scrape: each equation's source is
+  snapshotted into `data-tex` *before* MathJax swaps it for the SVG (synchronously, since
+  MathJax loads later). An Ask thread seeds with the equation shown rendered + an
+  "Equation N · Jump ↗" backlink, and on send marks the equation with the same teal
+  highlight as a passage (reopen-on-click, hover-summary all work — the highlight classes
+  were generalized from `mark.q-highlight` to `.q-highlight` so a block element can carry
+  them, anchored by the equation's `id`); Define tags it terracotta. Only active when the
+  chat server is live (a "💬 ask" hint shows on hover; `body.chat-on`); plain copies stay
+  static. Display equations only (inline `$x_i$` deferred). Verified end-to-end against the
+  live server: `data-tex` captures exact LaTeX (boldface `\mathbf{x}_i` preserved), bubble
+  shows Ask+Define only, Ask opens a thread with the rendered equation + backlink + an
+  "Ask about this equation…" placeholder, the block highlight renders (teal tint + underline).
+- **Chat-ready by default** (2026-07-02): `assemble.py` now auto-writes the chat grounding
+  text (`build/text/full.txt` → `<post>/chat/paper.md`, always the *full* paper even for a
+  concise summary) as part of assembly. Combined with the central store, a post is
+  chat-ready the instant it's built — step 7 collapsed from "copy + ground + install" to a
+  one-time server `--install`, nothing per post.
+- **Central post store + convenience symlink** (2026-07-02): every post is now built
+  into one fixed store, `~/.paper2blogpost/posts/<slug>-blogpost/`, instead of landing
+  wherever the skill happened to run. That store *is* the chat server's default `--dir`,
+  so a post is "born" where the server already looks — the old "copy the finished post
+  into `~/paper-blogposts/`" step is gone. A best-effort symlink (`scripts/publish.py`)
+  is dropped in the working dir (`./<slug>-blogpost` → the central copy) so you can still
+  open it from where you were; the symlink is never load-bearing (figures, chat,
+  assembly, `--upgrade` all run off the real path), and on a system that can't symlink
+  (e.g. Windows w/o Developer Mode) it degrades to a small HTML redirect + a printed
+  path. If the working dir is a git repo, the pointer name is added to `.gitignore` (it
+  targets an absolute `$HOME` path, so it shouldn't be committed). Name collisions in the
+  store are surfaced to the user (overwrite / rename / cancel) rather than silently
+  clobbering. `assemble.py` now `mkdir`s its `--out` parent so it can write anywhere.
+  **Migration:** the default root moved from `~/paper-blogposts` → `~/.paper2blogpost/posts`;
+  an existing post under the old root must be `mv`d over, and the LaunchAgent re-installed
+  (`chat-server.py --install`) to pick up the new `--dir`. Verified end-to-end: assemble
+  into the store, figures/refs materialized beside `index.html`, symlink published +
+  idempotent + non-clobbering + git-ignored, figures resolve through the symlink, and the
+  Windows fallback path.
+- **Concise ("summary") mode** (2026-07-02): a second kind of post from the same
+  pipeline — a short, colloquial, LessWrong-style *summary* (roughly a quarter to a
+  third the length) instead of a complete translation, for when you want the gist
+  without reading the whole paper. Same extraction, HTML conventions, assembly, and
+  *all* the interactive features (reference popups, cross-refs, Define, sidebar chat) —
+  the difference is purely editorial: keep the core narrative, key results with their
+  numbers, the two or three figures that carry the story, and the load-bearing
+  equations (notation still exact); cite fewer works inline but keep the *full*
+  bibliography; open with a **TL;DR key-takeaways box**. A **"Summary" badge** + *"The
+  short version"* eyebrow mark the hero, driven by a `body.concise` class the assembler
+  adds (`--mode concise`, or `"mode":"concise"` in `meta.json`; `--upgrade` preserves
+  it). Chat grounding stays the *full* paper text, so a reader of the summary can still
+  ask the sidebar for the detail it left out. New `references/concise.md` (the deltas);
+  `SKILL.md` gained a mode-selection step + an updated `description` that now triggers
+  on "summarize this paper as a blog post" / "short / TL;DR / LessWrong-style version."
+  Verified in-browser (light + dark): badge, eyebrow swap, TL;DR box, TOC excludes the
+  TL;DR, inline math + citations still render; full/concise/meta-mode/upgrade round-trips
+  all fill the body class correctly and idempotently.
 - **LaTeX in every popup** (2026-07-01): all content popups now typeset `$…$` / `$$…$$` with
   MathJax, not just the Define one — the reference "What is it about?" summary (`#refpop`),
   cross-reference previews (`#xpop`), the definition popup (`#defpop`), and the chat-highlight

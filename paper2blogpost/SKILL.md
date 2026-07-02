@@ -1,16 +1,35 @@
 ---
 name: paper2blogpost
-description: Turn a scientific paper PDF into a warm, colloquial, beautifully designed HTML blog post that keeps every bit of the actual content — it rewrites the stiff academic *language* into natural conversational prose without dropping any depth, figures, math, or references. Use this whenever someone wants a paper's writing made less stiff and more human while staying complete — e.g. "turn this arXiv PDF into a blog post," "rewrite this paper in plain, colloquial English as a webpage," "make this article read less stiff / less formal," "I want a nice friendly version of this study," or hands you a paper and asks for a casual / human / conversational walkthrough. Trigger even if they don't say the words "blog post" but clearly want a dense paper's prose transformed into a pleasant reading experience with the figures and references intact. This is about register, not reading level — not summarizing or simplifying-for-laypeople. Do NOT use for plain text extraction, content-dropping summaries, or slide decks.
+description: Turn a scientific paper PDF into a warm, colloquial, beautifully designed HTML blog post — figures, math, and references kept intact and interactive. Works in two modes. FULL (the default) is a faithful, complete translation that rewrites the stiff academic *language* into natural conversational prose without dropping any depth — about register, not reading level; trigger it for "turn this arXiv PDF into a blog post," "rewrite this paper in plain, colloquial English as a webpage," "make this article read less stiff / less formal," "I want a nice friendly version of this study," or any request to make a dense paper's prose a pleasure to read with everything intact. CONCISE mode is a short, colloquial, LessWrong-style *summary* that follows the paper's structure and keeps the key figures but significantly condenses it, for when someone wants the gist without reading the whole thing; trigger it for "summarize this paper as a blog post," "give me a short / TL;DR version of this paper," "a LessWrong-style writeup of this paper," "the gist of this paper as a nice webpage." Trigger either even without the words "blog post" when someone clearly wants a paper turned into a pleasant, navigable web read. Do NOT use for plain text extraction or slide decks.
 ---
 
 # Paper → friendly blog post
+
+## First: which mode?
+
+This skill makes two kinds of post from the same pipeline. **Decide before you start.**
+
+- **Full** *(default)* — a faithful, *complete* colloquial translation. Nothing is
+  dropped; every section, figure, number, caveat, and reference survives. This is the
+  rest of this document.
+- **Concise** — a short, LessWrong-style **summary**: the paper's structure and key
+  figures, significantly condensed, for when someone wants the gist without reading the
+  whole thing. Everything below still applies (same extraction, HTML conventions,
+  assembly, chat) — you just keep less and write shorter, add a TL;DR box, and build
+  with `--mode concise`. **The deltas are in `references/concise.md` — read it if the
+  request is for a summary.**
+
+Default to full. Switch to concise when the user asks to *summarize* / wants a *short*
+or *TL;DR* / *LessWrong-style* version. When unsure, ask — the two are very different
+artifacts.
 
 ## What you're making
 
 A stiff scientific PDF, turned into a webpage someone would actually enjoy
 reading — colloquial, visually calm, easy to navigate — **without losing any of
-the real content**. This isn't a summary. It's a faithful translation from
-academic dialect into natural, conversational language. If saying something
+the real content**. In full mode (the default) this isn't a summary — it's a
+faithful translation from academic dialect into natural, conversational language.
+(For the *concise* summary variant, see `references/concise.md`.) If saying something
 casually takes more words than the terse original, that's fine; longer-but-clearer
 beats shorter-but-stiff. The science stays; only the delivery changes.
 
@@ -37,31 +56,48 @@ Three promises that define quality here:
 
 ### The deliverable
 
-A self-contained folder you can open or send to anyone:
+Every post lives in one **central store** — `~/.paper2blogpost/posts/` — so the
+companion chat server always finds it and you never juggle output locations. A post is
+a self-contained folder in there:
 
 ```
-<paper-name>-blogpost/
+~/.paper2blogpost/posts/<paper-name>-blogpost/
 ├── index.html      the blog post (design + content + inlined citation data)
 ├── figures/        figure images, exactly as they appear in the paper
-└── refs/           the citation data (refs.json), inspectable
+├── refs/           the citation data (refs.json), inspectable
+└── build/          extraction + translation scratch (safe to delete afterwards)
 ```
 
-**Use a build directory unique to this paper — never a bare `build/` in the
-current directory.** Name it after the deliverable (e.g.
-`<paper-name>-blogpost/build/` or `<slug>-build/`). This matters because a generic
-`build/` is a collision waiting to happen: if two conversions ever run from the
-same place, they silently clobber each other's `sections/`, figures, and
-`meta.json`. Tie the build dir to the paper and that whole class of bug vanishes.
-Produce `index.html` in the deliverable folder with `figures/` and `refs/`
-alongside it.
+You **build directly into that folder** (so nothing has to be moved when you're done),
+then drop a **convenience symlink** in whatever directory you ran the skill from so the
+user can open the post from where they were working:
+
+```bash
+python scripts/publish.py "~/.paper2blogpost/posts/<paper-name>-blogpost"
+# → creates ./<paper-name>-blogpost  ⇒  the central copy  (best-effort symlink)
+```
+
+The symlink is a shortcut, never load-bearing — figures, chat, assembly, and
+`--upgrade` all run off the real central path. (On a system that can't symlink, e.g.
+Windows without Developer Mode, `publish.py` falls back to a small redirect file and
+prints the path; nothing is lost but the convenience.)
+
+**Before you build, check for a name collision.** If
+`~/.paper2blogpost/posts/<paper-name>-blogpost/` already exists, do **not** silently
+overwrite it — ask the user whether to overwrite it, use a different name, or stop.
+(The central store removes the old per-directory isolation, so same-named runs would
+otherwise clobber each other.)
 
 ## Setup: extract everything first
 
-You'll need PyMuPDF (`pip install pymupdf` if it's missing). Pick a unique build
-dir for this paper (call it `$BUILD`), then run both extractors into it:
+You'll need PyMuPDF (`pip install pymupdf` if it's missing). The build scratch lives
+inside the post's own central folder (call it `$BUILD`), so run both extractors into it
+— the extractors create the folder for you:
 
 ```bash
-BUILD="<paper-slug>-build"          # unique per paper, NOT a bare "build"
+POST="$HOME/.paper2blogpost/posts/<paper-slug>-blogpost"   # central store; check it doesn't already exist
+                                                           # (…-summary for a concise post — see references/concise.md)
+BUILD="$POST/build"
 python scripts/extract_text.py    --pdf "<paper.pdf>" --out "$BUILD"
 python scripts/extract_figures.py --pdf "<paper.pdf>" --out "$BUILD" --dpi 200
 ```
@@ -170,17 +206,29 @@ Two parts:
 
 ### 5. Assemble
 
-Stitch everything into the template:
+Stitch everything into the template — writing `index.html` at the top of the post
+folder (one level up from `build/`), then put the figure images and `refs.json` beside
+it so the page's relative links resolve. Finally, drop the convenience symlink:
 
 ```bash
 python scripts/assemble.py --build "$BUILD" \
-  --template assets/template.html --out "$BUILD/index.html"
+  --template assets/template.html --out "$POST/index.html"
+# for a concise summary post, add:  --mode concise
+
+cp    "$BUILD/figures/"*.png  "$POST/figures/" 2>/dev/null   # the images the page references
+mkdir -p "$POST/refs" && cp "$BUILD/refs.json" "$POST/refs/"
+
+python scripts/publish.py "$POST"      # best-effort ./<slug>-blogpost symlink in your cwd
 ```
 
-This fills the design template, derives the table of contents from your section
+`--mode concise` marks the post as a summary (a "Summary" badge + *"The short
+version"* eyebrow in the hero); it's a no-op for full posts. Assembly fills the design
+template, derives the table of contents from your section
 ids + headings, and inlines the citation data + paper title (the latter is what
-the in-browser Haiku call uses as context). The whole design — translucent TOC,
-progress bar, reference popups, cross-reference previews, dark mode, math — lives
+the in-browser Haiku call uses as context). It also **auto-writes the chat grounding
+text** — it copies `build/text/full.txt` → `<post>/chat/paper.md` — so the post is
+already chat-ready (see step 7); nothing to copy by hand. The whole design — translucent
+TOC, progress bar, reference popups, cross-reference previews, dark mode, math — lives
 in `assets/template.html`; see `references/design-notes.md` to tune it. **Tweak
 the template centrally there, not by hand-editing a generated post.**
 
@@ -209,14 +257,13 @@ CLI. It's a *powered mode*: the chat UI is already in every post but stays hidde
 unless the companion server is running, so a plain/shared copy is unaffected.
 
 There's **one** companion server for *all* the reader's posts — set up once, then
-every post just works (no per-post launching, and no tokens spent on setup). To make
-a post chat-ready: drop the paper's plain text into it for grounding, and put the post
-under the server's posts root (default `~/paper-blogposts/`).
+every post just works (no per-post launching, and no tokens spent on setup). Because
+the post was **built into the server's posts root** (`~/.paper2blogpost/posts/`, the
+central store) and assembly already dropped the grounding text at `<post>/chat/paper.md`,
+a post is chat-ready the moment it's built — **there's nothing to do per post.** The only
+setup is installing the server *once, ever*:
 
 ```bash
-cp "$BUILD/text/full.txt" "<post>/chat/paper.md"        # grounding text
-mkdir -p ~/paper-blogposts && cp -R "<post>" ~/paper-blogposts/   # so the server serves it
-
 # one-time setup — auto-starts at login, serves every post under the root:
 python scripts/chat-server.py --install [--model claude-haiku-4-5]
 # then open http://127.0.0.1:8877/ , pick the post, click "💬 Ask Claude"
@@ -261,6 +308,8 @@ Both say the same thing. One of them you'd read on a couch.
 - `assets/template.html` — the entire design (HTML + CSS + JS). Iterate here.
 - `references/authoring.md` — exact HTML conventions for sections, figures,
   citations, equations, meta, references. Read before translating.
+- `references/concise.md` — the *concise* summary mode: what to keep/cut, the TL;DR
+  box, `--mode concise`. Read this when the request is for a summary, not a full post.
 - `references/reference-popups.md` — refs.json schema + the lazy Haiku summary
   mechanism (why we don't pre-generate summaries).
 - `references/design-notes.md` — design language, interactions, how to tune it.

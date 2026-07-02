@@ -18,10 +18,11 @@ Setting all this up costs NO model tokens — only actually chatting does.
 Binds 127.0.0.1 only — it is NOT meant to be exposed to a network.
 
 Run it (one of):
-  python chat-server.py --install [--dir ~/paper-blogposts] [--port 8877]
+  python chat-server.py --install [--dir ~/.paper2blogpost/posts] [--port 8877]
       → installs a macOS LaunchAgent so it auto-starts at login (recommended).
   python chat-server.py [--dir <folder-of-posts | single-post>] [--port 8877]
       → run in the foreground. --dir may be a folder of posts OR one post folder.
+      Default --dir is ~/.paper2blogpost/posts, the central store the skill builds into.
 Then open http://127.0.0.1:<port>/ and pick a post.
 
 Each post's front-end pings <post>/__chat/ping (a RELATIVE URL, so it works wherever
@@ -41,6 +42,11 @@ import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+# The one central store every post lives in. The skill builds each post here (and drops
+# a convenience symlink back in your working dir), and this server serves the whole
+# folder — so a post is "born" where the server already looks; nothing to copy.
+POSTS_ROOT = Path.home() / ".paper2blogpost" / "posts"
 
 GUIDE = """You are a warm, sharp reading companion living in the sidebar of a friendly, \
 colloquial blog-post version of a scientific paper. A reader is going through the post \
@@ -76,27 +82,55 @@ PERSONA = ("You are the reading-companion chat for a friendly blog-post version 
 
 INDEX_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>paper2blogpost — your posts</title>
+<title>Your paper blog-posts</title>
 <style>
-  :root{{color-scheme:light dark}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;
-    max-width:680px;margin:9vh auto;padding:0 22px;line-height:1.6;color:#23201b;background:#fbf9f5}}
-  @media(prefers-color-scheme:dark){{body{{color:#ece7dc;background:#15140f}}}}
-  h1{{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}}
-  .sub{{color:#8a8378;font-size:14px;margin:0 0 26px}}
-  ul{{list-style:none;padding:0;margin:0}}
-  a.post{{display:block;padding:14px 16px;border-radius:12px;text-decoration:none;color:inherit;
-    border:1px solid #e7e1d6;margin-bottom:10px;transition:.15s;font-weight:600}}
-  @media(prefers-color-scheme:dark){{a.post{{border-color:#322f27}}}}
-  a.post:hover{{border-color:#1f6f6b;color:#1f6f6b}}
-  li.empty{{color:#8a8378}}
-  footer{{margin-top:30px;color:#8a8378;font-size:12.5px}}
-  code{{background:rgba(128,128,128,.15);padding:1px 5px;border-radius:5px}}
+  :root{{
+    --bg:#faf8f4; --surface:#fffdf9; --ink:#23201b; --ink-soft:#5c5548; --ink-faint:#8f887b;
+    --accent:#b8552f; --accent-soft:#f4e5da; --rule:#e9e3d8;
+    --shadow:0 8px 30px rgba(40,30,20,.07), 0 2px 8px rgba(40,30,20,.05);
+    color-scheme:light dark;
+  }}
+  @media (prefers-color-scheme:dark){{:root{{
+    --bg:#15140f; --surface:#1f1d16; --ink:#ece7dc; --ink-soft:#c3bcac; --ink-faint:#8a8378;
+    --accent:#dd8a60; --accent-soft:#2c2318; --rule:#332f26;
+    --shadow:0 10px 34px rgba(0,0,0,.4);
+  }}}}
+  *{{box-sizing:border-box}}
+  body{{margin:0; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif; line-height:1.6}}
+  .wrap{{max-width:760px; margin:0 auto; padding:13vh 24px 12vh}}
+  .eyebrow{{font-size:12.5px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:14px}}
+  h1{{font-family:'Iowan Old Style','Palatino Linotype',Charter,Georgia,serif;
+    font-size:44px; line-height:1.08; letter-spacing:-.015em; margin:0 0 14px; font-weight:600}}
+  .sub{{color:var(--ink-soft); font-size:18px; margin:0 0 42px; max-width:36em}}
+  .grid{{display:flex; flex-direction:column; gap:12px}}
+  a.post{{display:flex; align-items:center; gap:18px; text-decoration:none; color:inherit;
+    background:var(--surface); border:1px solid var(--rule); border-radius:16px;
+    padding:20px 22px; box-shadow:var(--shadow); transition:transform .16s ease, border-color .16s ease}}
+  a.post:hover{{transform:translateY(-2px); border-color:var(--accent)}}
+  a.post .body{{flex:1; min-width:0}}
+  a.post .t{{font-family:'Iowan Old Style','Palatino Linotype',Charter,Georgia,serif;
+    font-size:20px; font-weight:600; line-height:1.25; color:var(--ink)}}
+  a.post .dek{{font-size:14.5px; color:var(--ink-soft); margin-top:4px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}}
+  a.post .badge{{display:inline-block; margin-left:9px; padding:1px 8px; border-radius:20px; vertical-align:middle;
+    background:var(--accent); color:#fff; font-size:10px; font-weight:700; letter-spacing:.07em; text-transform:uppercase}}
+  a.post .go{{flex:none; color:var(--ink-faint); font-size:22px; transition:transform .16s ease, color .16s ease}}
+  a.post:hover .go{{color:var(--accent); transform:translateX(4px)}}
+  .empty{{color:var(--ink-faint); background:var(--surface); border:1px dashed var(--rule);
+    border-radius:16px; padding:30px 22px; text-align:center}}
+  footer{{margin-top:40px; color:var(--ink-faint); font-size:12.5px}}
+  footer code{{background:var(--accent-soft); color:var(--ink-soft); padding:1px 6px; border-radius:5px}}
 </style></head><body>
-<h1>Your paper blog-posts</h1>
-<p class="sub">Served locally · each chat is grounded in its own paper · pick one to read &amp; chat.</p>
-<ul>{rows}</ul>
-<footer>Serving <code>{root}</code> — drop new <code>&lt;name&gt;-blogpost/</code> folders here and refresh.</footer>
+<div class="wrap">
+  <div class="eyebrow">Your library</div>
+  <h1>Paper blog-posts</h1>
+  <p class="sub">Friendly, readable versions of the papers you've converted — each one can chat about its own
+  paper, grounded in the full text. Pick one to dive in.</p>
+  <div class="grid">{rows}</div>
+  <footer>{count} · served locally from <code>{root}</code> · built with the <b>paper2blogpost</b> skill</footer>
+</div>
 </body></html>"""
 
 
@@ -112,7 +146,14 @@ class Ctx:
         paper_file = self.chatdir / "paper.md"
         paper_text = paper_file.read_text(errors="ignore") if paper_file.exists() else ""
         self.grounded = bool(paper_text)
-        (self.chatdir / "CLAUDE.md").write_text(GUIDE.format(paper=paper_text or "(no paper text was provided)"))
+        # CLAUDE.md is a DERIVED cache — rebuilt here on every start from paper.md + GUIDE
+        # (paper.md is the source of truth; this file is how a tool-less `claude -p` gets
+        # grounded, since it auto-loads CLAUDE.md but can't open paper.md itself).
+        banner = ("<!-- AUTO-GENERATED — do not edit. Rebuilt on every server start from "
+                  "this folder's paper.md + the server's GUIDE. Edits here are overwritten; "
+                  "to change the grounding text, edit paper.md instead. -->\n\n")
+        (self.chatdir / "CLAUDE.md").write_text(
+            banner + GUIDE.format(paper=paper_text or "(no paper text was provided)"))
         self.threads_path = self.chatdir / "threads.json"
         self.defs_path = self.chatdir / "definitions.json"
         self.lock = threading.Lock()
@@ -504,12 +545,21 @@ class Handler(SimpleHTTPRequestHandler):
         for child in sorted(root.iterdir(), key=lambda c: c.name.lower()):
             idx = child / "index.html"
             if child.is_dir() and idx.exists():
-                posts.append((child.name, self._title_of(idx) or child.name))
-        rows = "\n".join(
-            f'<li><a class="post" href="/{html.escape(name)}/">{html.escape(title)}</a></li>'
-            for name, title in posts
-        ) or '<li class="empty">No posts here yet — build one with the paper2blogpost skill and drop its folder here.</li>'
-        body = INDEX_HTML.format(rows=rows, root=html.escape(str(root))).encode()
+                title, dek, concise = self._meta_of(idx)
+                posts.append((child.name, title or child.name, dek, concise))
+        cards = []
+        for name, title, dek, concise in posts:
+            badge = '<span class="badge">Summary</span>' if concise else ''
+            dek_html = f'<div class="dek">{html.escape(dek)}</div>' if dek else ''
+            cards.append(
+                f'<a class="post" href="/{html.escape(name)}/">'
+                f'<div class="body"><div class="t">{html.escape(title)}{badge}</div>{dek_html}</div>'
+                f'<span class="go">&rarr;</span></a>'
+            )
+        rows = "\n".join(cards) or ('<div class="empty">No posts here yet — build one with the '
+                                    'paper2blogpost skill; it lands in this folder automatically.</div>')
+        count = f"{len(posts)} post" + ("" if len(posts) == 1 else "s")
+        body = INDEX_HTML.format(rows=rows, root=html.escape(str(root)), count=count).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -517,12 +567,20 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     @staticmethod
-    def _title_of(index_path):
+    def _meta_of(index_path):
+        """(title, dek, is_concise) for a post's index.html — for the landing-page cards.
+        Reads a bounded prefix: the <title> is near the top and the hero (.dek) sits just
+        after the inlined CSS, so ~60 KB comfortably covers both even for a big post."""
         try:
-            m = re.search(r"<title>(.*?)</title>", index_path.read_text(errors="ignore")[:4000], re.I | re.S)
-            return re.sub(r"\s+", " ", m.group(1)).strip() if m else None
+            txt = index_path.read_text(errors="ignore")[:60000]
         except Exception:
-            return None
+            return (None, None, False)
+        def clean(m):
+            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", m.group(1))).strip() if m else None
+        title = clean(re.search(r"<title>(.*?)</title>", txt, re.I | re.S))
+        dek = clean(re.search(r'<p[^>]*class="dek"[^>]*>(.*?)</p>', txt, re.I | re.S))
+        concise = bool(re.search(r'<body[^>]*\bclass="[^"]*\bconcise\b', txt, re.I))
+        return (title, dek, concise)
 
     def _chat(self, ctx):
         try:
@@ -745,9 +803,9 @@ def main():
     ap = argparse.ArgumentParser(
         description="Local companion server for paper2blogpost. Serves one post OR a whole "
                     "folder of posts, and bridges each post's in-page chat to your `claude` CLI.")
-    ap.add_argument("--dir", default=str(Path.home() / "paper-blogposts"),
+    ap.add_argument("--dir", default=str(POSTS_ROOT),
                     help="a single post folder, OR a folder containing many post folders "
-                         "(default: ~/paper-blogposts)")
+                         "(default: ~/.paper2blogpost/posts, the central store the skill builds into)")
     ap.add_argument("--port", type=int, default=8877)
     ap.add_argument("--model", help="claude model for the chat (default: your CLI default; "
                                      "e.g. claude-haiku-4-5 / claude-sonnet-4-6 for snappier replies)")

@@ -39,23 +39,31 @@ skip the live call. Use this rarely; the default is lazy.)
 
 ## How the live generation works (already built into the template)
 
-The reader clicks "What is it about?". The page:
-1. checks for a cached summary (a pre-seed in `refs.json`, or one this browser
-   generated before) and shows it instantly if found;
-2. otherwise, if no Anthropic API key is stored yet, shows a tiny inline form
-   asking the reader to paste their own key (kept only in their browser, via the
-   🔑 Key control or the popup form);
-3. calls Claude Haiku directly from the browser **with the `web_search` tool
-   enabled**, telling it to look the cited work up first and then summarize what it
-   actually finds, then displays and caches the result.
+The reader clicks "What is it about?". The page splits the popup into two parts that
+are cached **separately**, because they have different lifetimes:
+
+- **SUMMARY ("what is it about")** — a property of the *reference*, identical wherever
+  it's cited. Cached **per reference** (`p2b-sum:<paper>:<ref-id>`), so it's generated
+  **once** and reused at every citation site.
+- **RELEVANCE ("why it's here")** — specific to *this* citation. Cached **per site**
+  (`p2b-rel:<paper>:<ref-id>:<hash-of-the-surrounding-passage>`), so each spot gets its
+  own note.
+
+So when the reader clicks:
+1. if the reference's summary is already cached (a pre-seed in `refs.json`, or one this
+   browser generated before), it shows **instantly** — even at a citation site never
+   opened before — and the site-specific "Why it's here" fills in beside it as a bonus;
+2. generating that note needs no web search (the work is already known), so it's a
+   cheap, fast follow-up call; if there's no API key or it fails, the popup just shows
+   the summary alone (the note is optional, never a blocker);
+3. only the **first** time a reference is opened does the page do the expensive part: it
+   asks for the reader's key if needed, then calls Claude Haiku from the browser **with
+   the `web_search` tool enabled** — look the work up, summarize what it finds — and
+   caches the summary (per reference) plus that first "Why it's here" (per site).
 
 The summary is deliberately **very short and very casual** — one or two breezy
-sentences, as colloquial as the post itself or more, no jargon. The **"Why it's
-here"** line is grounded in the **citation's own paragraph**, not the whole paper:
-when a citation is hovered, the page grabs the surrounding block text and passes it
-to Haiku as the local context, so the relevance reflects *that* spot. Because of
-this, the cache is keyed by reference **and** context — the same work cited in two
-different paragraphs gets its own location-specific "Why it's here".
+sentences, no jargon. The point of the split: a work cited ten times is summarized once
+(one web search, not ten), but still gets ten location-specific notes.
 
 **Why web search matters here.** Haiku summarizing a specific citation from memory
 alone is unreliable — for an obscure or recent work it will (rightly) refuse rather

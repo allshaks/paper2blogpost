@@ -99,23 +99,20 @@ toggle, multiple threads, LaTeX, and select-text → **Ask** / **Rewrite** with
 persistent highlights. The chat UI ships hidden in every post and only lights up when
 the companion server is running.
 
-It's **one server for all your posts**, set up once. Keep your posts in a folder
-(default `~/paper-blogposts/`), install the login agent once, and from then on every
-post just works — open the landing page, pick one, chat. Setup spends **no tokens**;
-only actually chatting does.
+It's **one server for all your posts**, set up once. Every post is built into a central
+store (`~/.paper2blogpost/posts/`) that the server serves by default, and assembly makes
+each post chat-ready automatically (grounding text and all) — so there's nothing to do
+per post. Install the login agent once and from then on every post just works: open the
+landing page, pick one, chat. Setup spends **no tokens**; only actually chatting does.
 
 ```bash
-# make a post chat-ready, then drop it under the posts folder
-cp "$BUILD/text/full.txt" "<post>/chat/paper.md"        # grounding text
-mkdir -p ~/paper-blogposts && cp -R "<post>" ~/paper-blogposts/
-
 # one-time: auto-start the server at login (macOS), then browse your posts
 python ~/.claude/skills/paper2blogpost/scripts/chat-server.py --install
 open http://127.0.0.1:8877/         # landing page lists every post; click one → "💬 Ask Claude"
 ```
 
 > Prefer not to install anything? Run it in the foreground instead:
-> `python …/chat-server.py --dir ~/paper-blogposts` (or `--dir <single-post>`).
+> `python …/chat-server.py --dir ~/.paper2blogpost/posts` (or `--dir <single-post>`).
 > Remove the login agent anytime with `--uninstall`.
 
 See [`paper2blogpost/references/chat-mode.md`](paper2blogpost/references/chat-mode.md).

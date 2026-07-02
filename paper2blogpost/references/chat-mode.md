@@ -9,8 +9,12 @@ to the post; a plain or shared copy stays a clean static read.
 
 - **`scripts/chat-server.py`** — **one** local server (binds `127.0.0.1` only) for
   *all* your posts; you set it up once. It:
-  1. serves a folder of posts — the landing page at `/` lists them and each post is
-     served at `/<post-name>/` (it also accepts a single post folder directly), and
+  1. serves a folder of posts — by default the **central store**
+     `~/.paper2blogpost/posts/` that the skill builds every post into; the landing page
+     at `/` is a designed **menu** (warm cards with each post's title, dek, and a
+     "Summary" badge for concise posts) and each post is served at `/<post-name>/` (it
+     also accepts a single post folder directly). Every post carries a **"← Posts"** link
+     (top-right controls, shown only when served) to get back to that menu, and
   2. bridges each post's in-page chat to the user's **`claude` CLI** (their Claude
      Code login — no API key). A thread maps to a resumable `claude` session id.
 - **Per-post state, created lazily**: the first time a post is chatted with, the
@@ -31,18 +35,13 @@ don't get "★ Insight" blocks in a reader chat). It deliberately does **not** u
 
 ## What the skill must do at build time
 
-Two small things make a post chat-ready:
-
-1. Drop the paper's plain text where the server grounds on it:
-   ```
-   <post>/chat/paper.md      ← the extracted paper text (build/text/full.txt)
-   ```
-2. Put the finished post folder under the server's **posts root** (default
-   `~/paper-blogposts/`) so the one persistent server picks it up — e.g.
-   `~/paper-blogposts/<paper-slug>-blogpost/`.
-
-Everything else (`CLAUDE.md`, `threads.json`) the server creates itself, lazily, in
-`<post>/chat/`. If `paper.md` is absent the chat still works but won't be grounded.
+**Nothing extra.** The post is built directly into the server's posts root (the central
+store `~/.paper2blogpost/posts/<paper-slug>-blogpost/`), and `assemble.py` automatically
+writes the grounding text to `<post>/chat/paper.md` (always the *full* paper text — even
+for a concise summary post, so the chat can answer in depth about the parts the summary
+left out). Everything else (`CLAUDE.md`, `threads.json`) the server creates itself,
+lazily, in `<post>/chat/`. If `paper.md` is somehow absent the chat still works but
+won't be grounded.
 
 ## Running it (tell the user)
 
@@ -50,7 +49,7 @@ Everything else (`CLAUDE.md`, `threads.json`) the server creates itself, lazily,
 the server up, so afterwards every post just works with nothing to launch:
 
 ```bash
-python scripts/chat-server.py --install [--dir ~/paper-blogposts] [--model claude-haiku-4-5]
+python scripts/chat-server.py --install [--dir ~/.paper2blogpost/posts] [--model claude-haiku-4-5]
 # auto-starts now and at every login; open http://127.0.0.1:8877/ and pick a post.
 # remove later with:  python scripts/chat-server.py --uninstall
 ```
@@ -117,11 +116,23 @@ command from a `systemd --user` service or a login script instead.
   is LaTeX-aware: formulas render with MathJax in the popup (server repairs unescaped-
   backslash JSON). Server: `POST …/__chat/define` (SSE, same phase pills as chat) +
   `GET …/__chat/definitions`.
-- **LaTeX math** — replies render math with the page's MathJax: inline `$…$` and
-  displayed `$$…$$` (the persona tells the model to emit real LaTeX). `mdLite` pulls
-  math spans out before the markdown passes so `*`/`_` inside an equation aren't
-  mangled, then `typesetMath()` typesets each *finished* message (streamed replies on
-  done, restored history on load — not per-token). Display equations are kept compact
+- **Click a display equation → Ask / Define it** — rendered math is an unselectable SVG,
+  so instead of trying to select it, a **click** on any `<div class="equation">` opens the
+  same bubble (Ask + Define; no "Rewrite" — meaningless for math). It hands Claude the
+  equation's **exact LaTeX**, not a lossy text scrape: each equation's source is snapshotted
+  into `data-tex` *before* MathJax swaps it for the SVG. An Ask thread seeds with the
+  equation (shown rendered, with an "Equation N · Jump ↗" backlink) and, once you send,
+  marks the equation with the same teal highlight as a passage (reopen on click, hover for
+  the thread summary); Define tags it terracotta and explains it in the popup. Only lit up
+  when the server is live (a small "💬 ask" hint appears on hover); a plain copy stays a
+  static read. Display equations only for now — inline `$x_i$` symbols aren't clickable yet.
+- **LaTeX math** — **both your own messages and the replies** render math with the
+  page's MathJax: inline `$…$` and displayed `$$…$$` (the persona tells the model to emit
+  real LaTeX). A shared `protectMath()` pulls math spans out before any markdown pass so
+  `*`/`_` inside an equation aren't mangled; replies go through `mdLite` (markdown + math),
+  your messages through `mdMath` (math only — text you typed literally isn't
+  markdown-formatted), then `typesetMath()` typesets each *finished* message (streamed
+  replies on done, restored history on load — not per-token). Display equations are kept compact
   in the bubble: `mdLite` strips the blank lines the model puts around `$$…$$` (which
   `white-space:pre-wrap` would otherwise render as a tall gap) and the chat CSS trims
   MathJax's default `1em` display margin to `.35em`; wide equations scroll

@@ -6,7 +6,7 @@
 <title>{{TITLE}}</title>
 <!--
   paper2blogpost template. assemble.py fills the double-brace placeholders below
-  (TITLE, HERO_TITLE, DEK, META, TOC, CONTENT, REFERENCES_LIST, REFS_DATA).
+  (BODY_CLASS, TITLE, HERO_TITLE, DEK, META, TOC, CONTENT, REFERENCES_LIST, REFS_DATA).
   Note: do NOT write those tokens with their braces inside this comment -- the
   assembler does a global string replace, so any brace-token here would get
   filled too (and duplicate the whole article). Design lives entirely in this
@@ -26,6 +26,7 @@
   --link-soft:#dbeceb;
   --shadow:0 8px 30px rgba(40,30,20,.10), 0 2px 8px rgba(40,30,20,.06);
   --maxw:720px;
+  --maxw-wide:864px;       /* reading column when the TOC is collapsed (reclaims its space) */
   --chat-w:380px;          /* live chat width (drives the squeeze) */
   --chat-guard:0px;        /* left guard so the column never slides under the TOC */
   --serif:'Newsreader', Georgia, 'Times New Roman', serif;
@@ -62,11 +63,14 @@ body.chat-resizing #controls{ transition:none !important; }
 /* ---- top-right controls ---- */
 #controls{position:fixed; top:14px; right:18px; z-index:60; display:flex; gap:8px;
   transition:right .28s cubic-bezier(.4,0,.2,1)}
-#controls button{
-  font-family:var(--sans); font-size:13px; cursor:pointer;
+#controls button, #controls a{
+  font-family:var(--sans); font-size:13px; cursor:pointer; text-decoration:none;
   background:var(--surface); color:var(--ink-soft); border:1px solid var(--rule);
   border-radius:999px; padding:6px 12px; box-shadow:var(--shadow); transition:.2s}
-#controls button:hover{color:var(--ink); transform:translateY(-1px)}
+#controls button:hover, #controls a:hover{color:var(--ink); transform:translateY(-1px)}
+/* a "back to all posts" link — only when the server is live (there's a real menu to go to) */
+#home-link{display:none; align-items:center; gap:5px}
+body.chat-on #home-link{display:inline-flex}
 
 /* ---- table of contents ---- */
 #toc{
@@ -100,7 +104,10 @@ body.toc-collapsed #toc-show{display:inline-flex}
   background:var(--accent-soft); font-weight:600}
 
 /* ---- main column ---- */
-main{max-width:var(--maxw); margin:0 auto; padding:96px 26px 140px}
+main{max-width:var(--maxw); margin:0 auto; padding:96px 26px 140px;
+  transition:max-width .35s cubic-bezier(.4,0,.2,1)}
+/* collapsing the TOC hands its space back to the reading column (wider, still centered) */
+body.toc-collapsed main{max-width:var(--maxw-wide)}
 .hero{margin-bottom:48px}
 .hero .eyebrow{font-family:var(--sans); font-size:13px; letter-spacing:.12em;
   text-transform:uppercase; color:var(--accent); font-weight:600; margin-bottom:14px}
@@ -130,6 +137,23 @@ section{opacity:1}
   font-size:18.5px; line-height:1.6}
 .callout .callout-label{font-family:var(--sans); font-size:12px; font-weight:700;
   text-transform:uppercase; letter-spacing:.08em; color:var(--accent); display:block; margin-bottom:6px}
+
+/* ---- concise ("summary") mode ---- toggled by body.concise. The hero swaps its
+   eyebrow for a "Summary" badge; a TL;DR box (content the model writes) leads the
+   article. Full mode ignores all of this, so the same template serves both. */
+.hero .eyebrow .ey-concise{display:none}
+body.concise .hero .eyebrow .ey-full{display:none}
+body.concise .hero .eyebrow .ey-concise{display:inline}
+.summary-badge{display:inline-block; margin-left:9px; padding:2px 10px; border-radius:20px;
+  background:var(--accent); color:#fff; font-size:10.5px; letter-spacing:.09em;
+  text-transform:uppercase; font-weight:700; vertical-align:middle; line-height:1.7}
+.tldr{background:var(--accent-soft); border-left:4px solid var(--accent);
+  border-radius:0 12px 12px 0; padding:18px 24px 20px; margin:0 0 44px}
+.tldr .tldr-label{font-family:var(--sans); font-size:12px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.09em; color:var(--accent); display:block; margin-bottom:11px}
+.tldr ul{margin:0; padding-left:20px}
+.tldr li{margin:8px 0; line-height:1.55; font-size:18px}
+.tldr li::marker{color:var(--accent)}
 
 /* ---- theorem environments (Definition / Theorem / Lemma / Proof / …) ----
    A colored left rule + a bold colored label. Colour encodes the family:
@@ -280,6 +304,17 @@ a.xref:hover{background:var(--accent-soft); border-radius:4px}
 /* equations as jump targets */
 .equation{margin:24px 0; scroll-margin-top:80px}
 .equation:target, figure:target, .table-wrap:target, .thmbox:target{scroll-margin-top:80px}
+/* click a display equation to ask/define it — only lit up when the chat server is live */
+body.chat-on .equation{position:relative; cursor:pointer; border-radius:8px; transition:background .15s}
+body.chat-on .equation:hover{background:var(--link-soft)}
+body.chat-on .equation::after{content:"💬 ask"; position:absolute; top:-10px; right:12px;
+  font-family:var(--sans); font-size:11px; font-weight:600; color:var(--link); background:var(--bg);
+  padding:0 7px; line-height:1.8; border-radius:10px; opacity:0; transition:opacity .15s; pointer-events:none}
+body.chat-on .equation:hover::after{opacity:1}
+/* an equation that already has a chat / a definition attached (rides the same classes as
+   passage marks, but on the block element, so it needs a roomier radius + no inline padding) */
+.equation.q-highlight, .equation.def-highlight{border-radius:8px; padding:2px 4px}
+body.chat-on .equation.q-highlight::after, body.chat-on .equation.def-highlight::after{content:none}
 
 /* ---- bibliography ---- */
 #references{border-top:1px solid var(--rule); margin-top:80px; padding-top:24px}
@@ -395,15 +430,18 @@ body.chat-resizing{cursor:ew-resize; user-select:none}
   font-weight:600; padding:6px 10px; border-radius:7px; white-space:nowrap}
 #sel-bubble button:hover{background:rgba(255,255,255,.16)}
 #sel-bubble button + button{border-left:1px solid rgba(255,255,255,.18)}
+/* on math there's nothing to "rewrite" — offer only Ask + Define */
+#sel-bubble.math [data-act="rewrite"]{display:none}
+#sel-bubble.math [data-act="ask"]{border-left:none}
 /* a passage that has a chat attached to it */
-mark.q-highlight{background:var(--link-soft); color:inherit; border-radius:3px;
+.q-highlight{background:var(--link-soft); color:inherit; border-radius:3px;
   padding:.5px 1px; cursor:pointer; box-shadow:inset 0 -2px 0 var(--link)}
-mark.q-highlight:hover{filter:brightness(.97)}
+.q-highlight:hover{filter:brightness(.97)}
 /* a defined term — distinct (terracotta) from the teal chat highlights */
-mark.def-highlight{background:var(--accent-soft); color:inherit; border-radius:3px;
+.def-highlight{background:var(--accent-soft); color:inherit; border-radius:3px;
   padding:.5px 1px; cursor:help; box-shadow:inset 0 -2px 0 var(--accent)}
-mark.def-highlight:hover{filter:brightness(.97)}
-mark.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
+.def-highlight:hover{filter:brightness(.97)}
+.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
 @keyframes defpulse{0%,100%{opacity:.5}50%{opacity:.85}}
 /* the hover definition popup (document-anchored, scrolls with the page) */
 #defpop{position:absolute; z-index:79; display:none; max-width:340px; max-height:52vh; overflow-y:auto;
@@ -441,9 +479,10 @@ mark.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
 #threadpop .tp-loading{color:var(--ink-faint); font-style:italic}
 </style>
 </head>
-<body>
+<body{{BODY_CLASS}}>
 <div id="progress"></div>
 <div id="controls">
+  <a id="home-link" href="/" title="Back to all your posts">&larr;&nbsp;Posts</a>
   <button id="keyBtn" title="Set your Anthropic API key (used for on-demand reference summaries)">🔑 Key</button>
   <button id="themeBtn" title="Toggle light/dark">◐ Theme</button>
 </div>
@@ -459,7 +498,7 @@ mark.def-highlight.pending{animation:defpulse 1s infinite ease-in-out}
 
 <main>
   <header class="hero">
-    <div class="eyebrow">A friendly walk-through</div>
+    <div class="eyebrow"><span class="ey-full">A friendly walk-through</span><span class="ey-concise">The short version <span class="summary-badge">Summary</span></span></div>
     <h1>{{HERO_TITLE}}</h1>
     <p class="dek">{{DEK}}</p>
     <div class="meta">{{META}}</div>
@@ -546,7 +585,8 @@ document.getElementById('themeBtn').onclick = () => {
 const TOCKEY = 'p2b-toc-collapsed';
 if (localStorage.getItem(TOCKEY) === '1') document.body.classList.add('toc-collapsed');
 const setTocCollapsed = c => { document.body.classList.toggle('toc-collapsed', c);
-  localStorage.setItem(TOCKEY, c ? '1' : '0'); };
+  localStorage.setItem(TOCKEY, c ? '1' : '0');
+  window.dispatchEvent(new Event('resize')); };   // let the chat re-layout (guard depends on the TOC)
 document.getElementById('toc-collapse')?.addEventListener('click', () => setTocCollapsed(true));
 document.getElementById('toc-show')?.addEventListener('click', () => setTocCollapsed(false));
 
@@ -583,19 +623,27 @@ const PAPER = window.__PAPER__ || {title:'this paper', id:'paper'};
 const HAIKU_MODEL = 'claude-haiku-4-5';  // alias tracks the latest Haiku 4.5 snapshot
 const KEY_LS = 'p2b-anthropic-key';
 function ctxHash(s){ s=s||''; let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return (h>>>0).toString(36); }
-// Cache key includes the citation's local context: the same reference cited in two
-// different paragraphs gets its own (location-specific) "Why it's here" note.
-const sumKey = ref => `p2b-sum:${PAPER.id}:${ref.id}:${ctxHash(ref.context||'')}`;
+// Two-level cache. The SUMMARY ("what is it about") is a property of the *reference*, so
+// it's keyed per-reference and reused at every citation site. The RELEVANCE ("why it's
+// here") is location-specific, so it's keyed per citation site (by the surrounding
+// passage). => a reference cited in five places is summarized ONCE (one web search), but
+// gets its own "why it's here" note in each spot.
+const summaryKey = ref => `p2b-sum:${PAPER.id}:${ref.id}`;
+const relKey     = ref => `p2b-rel:${PAPER.id}:${ref.id}:${ctxHash(ref.context||'')}`;
 const getKey = () => localStorage.getItem(KEY_LS) || '';
 const setKey = k => k ? localStorage.setItem(KEY_LS, k.trim()) : localStorage.removeItem(KEY_LS);
+const readLS = k => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
 
-function cachedSummary(ref){
-  // pre-seeded in refs.json, or previously generated and stored locally
-  if (ref.summary) return {summary: ref.summary, relevance: ref.relevance || ''};
-  try { return JSON.parse(localStorage.getItem(sumKey(ref))) || null; } catch { return null; }
+function cachedSummary(ref){   // assemble {summary, relevance} from the two caches (+ any pre-seed)
+  const summary   = ref.summary   || readLS(summaryKey(ref));
+  const relevance = ref.relevance || readLS(relKey(ref));
+  return (summary || relevance) ? {summary, relevance} : null;
 }
-function storeSummary(ref, data){
-  try { localStorage.setItem(sumKey(ref), JSON.stringify(data)); } catch {}
+function storeSummary(ref, d){
+  try {
+    if (d.summary)   localStorage.setItem(summaryKey(ref), d.summary);
+    if (d.relevance) localStorage.setItem(relKey(ref), d.relevance);
+  } catch {}
 }
 function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':s; return d.innerHTML; }
 
@@ -690,6 +738,33 @@ async function generateSummary(ref){
            : {summary:text, relevance:''};
 }
 
+// Just the location-specific "why it's here" note, for a reference we've ALREADY
+// summarized (cited again elsewhere). No web search — the work is known; we only need to
+// read why *this* passage reaches for it. Cheap + fast next to the full summary call.
+async function generateRelevance(ref, summary){
+  const key = getKey();
+  if (!key) throw {needKey:true};
+  const prompt =
+    `In a casual, friendly blog retelling of "${PAPER.title}", the reader is looking at a ` +
+    `citation to this work:\n${ref.citation}\n` +
+    (summary ? `(In brief, that work: ${summary})\n` : ``) +
+    `\nHere is the EXACT passage that cites it:\n"${ref.context||''}"\n\n` +
+    `Reply with ONE short, casual sentence on why THIS passage reaches for that work — grounded ` +
+    `in the passage above, not a guess about the whole paper. Just the sentence: no label, no preamble.`;
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{ 'content-type':'application/json', 'x-api-key':key, 'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify({ model:HAIKU_MODEL, max_tokens:200, messages:[{role:'user', content:prompt}] })
+  });
+  if (!res.ok){ let msg=`API error (${res.status})`;
+    try { const j = await res.json(); if (j.error?.message) msg = j.error.message; } catch {}
+    throw {message: msg}; }
+  const data = await res.json();
+  const raw = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text||'').join('').trim();
+  return raw.replace(/\*\*/g,'').replace(/^\s*RELEVANCE:\s*/i,'').trim();
+}
+
 const pop = document.getElementById('refpop');
 let pinned = false, hideTimer = null;
 
@@ -731,28 +806,44 @@ function renderPop(ref){
     else { body.classList.add('open'); btn.textContent='Hide'; }
   };
 
+  const keyForm = () => {
+    body.innerHTML = keyFormHtml(); body.classList.add('open');
+    const inp = body.querySelector('.rp-keyinput');
+    const go = (e)=>{ if(e) e.stopPropagation(); setKey(inp.value); if (getKey()) run(); };
+    body.querySelector('.rp-keysave').onclick = go;
+    inp.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
+    inp.focus();
+  };
   async function run(){
-    const have = cachedSummary(ref);
-    if (have){ reveal(have); return; }
-    if (!getKey()){
-      body.innerHTML = keyFormHtml(); body.classList.add('open');
-      const inp = body.querySelector('.rp-keyinput');
-      body.querySelector('.rp-keysave').onclick = (e)=>{ e.stopPropagation();
-        setKey(inp.value); if (getKey()) run(); };
-      inp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ setKey(inp.value); if(getKey()) run(); }});
-      inp.focus();
+    const summary   = ref.summary   || readLS(summaryKey(ref));
+    const relevance = ref.relevance || readLS(relKey(ref));
+    const wantRel   = !!(ref.context && ref.context.trim());   // only add a "why here" if we have the passage
+
+    // already resolved for THIS site (summary + its note, or summary where no passage) → instant
+    if (summary && (relevance || !wantRel)){ reveal({summary, relevance}); return; }
+
+    // reference already summarized, cited again here → reuse the summary; the note is a bonus
+    if (summary){
+      if (!getKey()){ reveal({summary, relevance:''}); return; }   // show the summary now; no key → skip the note
+      body.classList.add('open'); btn.disabled = true;
+      body.innerHTML = `<p class="rp-summary">${esc(summary)}</p>`
+        + `<div class="rp-relevance"><span class="rp-spin"></span>Why it's here…</div>`;
+      mjTypeset(body);
+      try { const rel = await generateRelevance(ref, summary);   // no web search — the work is known
+            try { localStorage.setItem(relKey(ref), rel); } catch {}
+            reveal({summary, relevance: rel}); }
+      catch(err){ reveal({summary, relevance:''}); }              // the note is optional — fall back to summary alone
       return;
     }
-    body.classList.add('open');
+
+    // first encounter with this reference → need a key, then the full grounded summary (web search)
+    if (!getKey()){ keyForm(); return; }
+    body.classList.add('open'); btn.disabled = true;
     body.innerHTML = `<span class="rp-spin"></span>Asking Haiku…`;
-    btn.disabled = true;
     try { const d = await generateSummary(ref); storeSummary(ref, d); reveal(d); }
     catch(err){
       btn.disabled = false;
-      if (err.needKey){ body.innerHTML = keyFormHtml();
-        const inp = body.querySelector('.rp-keyinput');
-        body.querySelector('.rp-keysave').onclick = (e)=>{ e.stopPropagation(); setKey(inp.value); if(getKey()) run(); };
-        inp.focus(); return; }
+      if (err.needKey){ keyForm(); return; }
       body.innerHTML = `<div class="rp-note">Couldn't generate a summary: ${esc(err.message||'unknown error')}.
         Check your key (🔑 Key) and try again.</div>`;
     }
@@ -958,11 +1049,26 @@ xpop.addEventListener('mouseleave', hideX);
   const mainEl = document.querySelector('main');
   if (!launch || !panel) return;
 
-  let serverUp = false, busy = false, cur = null, pendingAnchor = null, selRange = null;
+  let serverUp = false, busy = false, cur = null, pendingAnchor = null, selRange = null, mathSel = null;
+
+  // Snapshot each display equation's LaTeX NOW, before MathJax replaces it with an
+  // (unselectable) SVG — so a click can hand Claude the exact source, not a lossy render.
+  // This runs synchronously as the page parses; MathJax loads later, so the raw `$$…$$`
+  // is still in the DOM here.
+  function tagEquations(){
+    document.querySelectorAll('.equation').forEach(eq=>{
+      if(eq.dataset.tex) return;
+      const t=(eq.textContent||'').trim()
+        .replace(/^\$\$?/,'').replace(/\$\$?$/,'').replace(/^\\\[/,'').replace(/\\\]$/,'').trim();
+      if(t) eq.dataset.tex=t;
+    });
+  }
+  tagEquations();
 
   // Light up only if the companion server answers; then restore any highlights.
   fetch('__chat/ping').then(r=>r.ok?r.json():null).then(d=>{
-    if (d && d.ok){ serverUp = true; launch.style.display='block'; loadAnchors(); loadDefinitions(); }
+    if (d && d.ok){ serverUp = true; document.body.classList.add('chat-on');
+      launch.style.display='block'; loadAnchors(); loadDefinitions(); }
   }).catch(()=>{});
 
   // ---- settings (model / effort / internet), remembered ----
@@ -989,7 +1095,7 @@ xpop.addEventListener('mouseleave', hideX);
 
   function chatGeom(){
     const vw=window.innerWidth;
-    const guard=vw>1100?258:16;              // clear the TOC when it's showing
+    const guard=(vw>1100 && !document.body.classList.contains('toc-collapsed'))?258:16;  // clear the TOC only when it's showing
     const squeeze=(vw-guard-MINW)>=(COL+GUTTER);   // is there room to push, not cover?
     const maxW=squeeze ? (vw-guard-COL-GUTTER)
                        : Math.min(Math.round(vw*0.92), vw-40);
@@ -1021,20 +1127,28 @@ xpop.addEventListener('mouseleave', hideX);
   // ($$…$$ / \[…\] / \(…\) / $…$), run markdown on the rest, then restore the math
   // verbatim for MathJax. Everything is HTML-escaped (math included), so a stray `<`
   // inside an equation can't break the markup — MathJax reads it back from the text.
-  function mdLite(s){
-    s=esc(s);
-    const math=[];
+  // Pull math spans out of already-escaped text so later passes can't mangle them; the
+  // caller restores them verbatim for MathJax. Display math also swallows blank lines
+  // hugging it — the equation is a block, so those newlines (kept by white-space:pre-wrap)
+  // would add a tall gap above/below.
+  function protectMath(s, math){
     const stash=m=>{ math.push(m); return '@@M'+(math.length-1)+'@@'; };
-    // display math: also swallow blank lines hugging it — the equation is a block, so
-    // those newlines (kept by white-space:pre-wrap) would add a tall gap above/below.
     s=s.replace(/\n*[^\S\n]*(\$\$[\s\S]+?\$\$)[^\S\n]*\n*/g, (_,eq)=>stash(eq));  // $$…$$
     s=s.replace(/\n*[^\S\n]*(\\\[[\s\S]+?\\\])[^\S\n]*\n*/g, (_,eq)=>stash(eq));  // \[…\]
     s=s.replace(/\\\(([\s\S]+?)\\\)/g, stash);    // inline   \(…\)
     s=s.replace(/\$([^$\n]+?)\$/g, stash);        // inline   $…$  (same line)
-    s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
-    s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
-    s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');
-    return s.replace(/@@M(\d+)@@/g,(_,i)=>math[+i]);
+    return s;
+  }
+  const restoreMath=(s, math)=>s.replace(/@@M(\d+)@@/g,(_,i)=>math[+i]);
+  // math only (for the user's own messages — render their LaTeX, but don't apply markdown
+  // to text they typed literally)
+  function mdMath(s){ const math=[]; return restoreMath(protectMath(esc(s), math), math); }
+  function mdLite(s){
+    const math=[]; let t=protectMath(esc(s), math);
+    t=t.replace(/`([^`]+)`/g,'<code>$1</code>');
+    t=t.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+    t=t.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+    return restoreMath(t, math);
   }
   // Typeset the math in a freshly-rendered message using the page's MathJax (which may
   // still be loading — wait on its startup promise if so).
@@ -1051,7 +1165,7 @@ xpop.addEventListener('mouseleave', hideX);
     const e=msgs.querySelector('.empty'); if(e) e.remove();
     const el=document.createElement('div');
     el.className='msg '+(role==='user'?'user':'bot');
-    if(role==='user'){ el.textContent=text||''; }
+    if(role==='user'){ el.innerHTML=mdMath(text||''); if(text) typesetMath(el); }   // render the user's own LaTeX
     else { el.innerHTML=mdLite(text||''); if(text) typesetMath(el); }   // render math in restored history
     msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight; return el;
   }
@@ -1063,8 +1177,9 @@ xpop.addEventListener('mouseleave', hideX);
   function startThread(tid, anchor){
     cur=tid; pendingAnchor=anchor||null; tlist.classList.remove('open'); clearMsgs(true);
     if(anchor){ const e=msgs.querySelector('.empty');
-      if(e) e.innerHTML='About this passage:<br><em>“'+esc(anchor.quote.slice(0,180))+(anchor.quote.length>180?'…':'')+'”</em>'; }
-    input.placeholder = anchor ? 'Ask about this passage…' : 'Ask about the paper…';
+      if(e){ if(anchor.eqId){ e.innerHTML='About this equation:<br>'+mdLite(anchor.quote); typesetMath(e); }
+             else e.innerHTML='About this passage:<br><em>“'+esc(anchor.quote.slice(0,180))+(anchor.quote.length>180?'…':'')+'”</em>'; } }
+    input.placeholder = anchor ? (anchor.eqId ? 'Ask about this equation…' : 'Ask about this passage…') : 'Ask about the paper…';
     showAnchorBar(anchor);
   }
   const newChat=()=>{ startThread(newId(), null); setTimeout(()=>input.focus(),50); };
@@ -1077,7 +1192,7 @@ xpop.addEventListener('mouseleave', hideX);
     clearMsgs(false);
     if(t&&t.messages&&t.messages.length) t.messages.forEach(m=>addMsg(m.role, m.text)); else clearMsgs(true);
     showAnchorBar(t && t.anchor);              // backlink if this is a passage thread
-    if(t && t.anchor) input.placeholder='Ask about this passage…';
+    if(t && t.anchor) input.placeholder = t.anchor.eqId ? 'Ask about this equation…' : 'Ask about this passage…';
     setTimeout(()=>input.focus(),50);
   }
   async function openRecentOrNew(){
@@ -1112,7 +1227,7 @@ xpop.addEventListener('mouseleave', hideX);
   send.onclick = ()=>doSend();
 
   // ---- text selection → Ask / Rewrite bubble + highlight ----
-  function hideBubble(){ bubble.classList.remove('show'); }
+  function hideBubble(){ bubble.classList.remove('show','math'); mathSel=null; }
   function closestSection(node){ const el=node.nodeType===1?node:node.parentElement; return el?el.closest('main section[id]'):null; }
   function anchorFor(range){
     const sec=closestSection(range.startContainer); const quote=range.toString();
@@ -1152,23 +1267,36 @@ xpop.addEventListener('mouseleave', hideX);
     if(a.quote && range.toString().trim().slice(0,16)!==a.quote.trim().slice(0,16)) return null; // offsets drifted
     return range;
   }
-  function applyAnchor(a, cls, data){ const range=rangeForAnchor(a); if(range) wrapRange(range, cls, data); }
+  function applyAnchor(a, cls, data){
+    // an equation anchor marks the .equation block itself (by id) — no text to wrap
+    if(a && a.eqId){ const el=document.getElementById(a.eqId);
+      if(el){ cls.split(' ').forEach(c=>c&&el.classList.add(c)); Object.assign(el.dataset, data||{}); } return; }
+    const range=rangeForAnchor(a); if(range) wrapRange(range, cls, data);
+  }
   function flashEl(el){ el.classList.remove('xref-flash'); void el.offsetWidth;
     el.classList.add('xref-flash'); setTimeout(()=>el.classList.remove('xref-flash'), 1700); }
   // Scroll the article to the passage this chat is about and flash it. Uses the persistent
   // highlight if present; otherwise draws it (this chat *is* about that passage).
   function jumpToPassage(anchor, tid){
     if(!anchor) return;
-    let m=document.querySelector('mark.q-highlight[data-thread="'+tid+'"]');
-    if(!m){ applyAnchor(anchor, 'q-highlight', {thread: tid}); m=document.querySelector('mark.q-highlight[data-thread="'+tid+'"]'); }
+    if(anchor.eqId){ const el=document.getElementById(anchor.eqId);
+      if(el){ el.scrollIntoView({behavior:'smooth', block:'center'}); flashEl(el); } return; }
+    let m=document.querySelector('.q-highlight[data-thread="'+tid+'"]');
+    if(!m){ applyAnchor(anchor, 'q-highlight', {thread: tid}); m=document.querySelector('.q-highlight[data-thread="'+tid+'"]'); }
     if(m){ m.scrollIntoView({behavior:'smooth', block:'center'}); flashEl(m); }
   }
   // The backlink bar at the top of the chat (shown only when the thread has a passage).
   function showAnchorBar(anchor){
     if(!anchor || !anchor.quote){ hideAnchorBar(); return; }
-    const tid=cur, q=anchor.quote.trim();
-    anchorBar.innerHTML='<span class="ja-ic">↩</span><span class="ja-tx">“'
-      +esc(q.slice(0,120))+(q.length>120?'…':'')+'”</span><span class="ja-go">Jump&nbsp;↗</span>';
+    const tid=cur;
+    if(anchor.eqId){   // an equation-anchored thread: label it (rendering full math in this tiny bar is messy)
+      const m=/eq-([\w.]+)/.exec(anchor.eqId); const label=m?('Equation '+m[1].replace(/-/g,'.')):'this equation';
+      anchorBar.innerHTML='<span class="ja-ic">↩</span><span class="ja-tx">'+esc(label)+'</span><span class="ja-go">Jump&nbsp;↗</span>';
+    } else {
+      const q=anchor.quote.trim();
+      anchorBar.innerHTML='<span class="ja-ic">↩</span><span class="ja-tx">“'
+        +esc(q.slice(0,120))+(q.length>120?'…':'')+'”</span><span class="ja-go">Jump&nbsp;↗</span>';
+    }
     anchorBar.onclick=()=>jumpToPassage(anchor, tid);
     anchorBar.classList.add('show');
   }
@@ -1187,6 +1315,13 @@ xpop.addEventListener('mouseleave', hideX);
     let el=range.commonAncestorContainer; el=el.nodeType===1?el:el.parentElement;
     const block=el&&el.closest('p, li, blockquote, .callout, figcaption');
     return block ? block.textContent.replace(/\s+/g,' ').trim().slice(0,1500) : '';
+  }
+  // Context for asking/defining an equation: the prose immediately around it.
+  function equationContext(eq){
+    if(!eq) return '';
+    const grab=el=>(el && /^(P|LI|FIGCAPTION)$/.test(el.tagName)) ? el.textContent : '';
+    return [grab(eq.previousElementSibling), grab(eq.nextElementSibling)]
+      .join(' ').replace(/\s+/g,' ').trim().slice(0,1500);
   }
   // Best-effort jump to where a definition appears in the (colloquially rewritten) article.
   // The model's paper_quote is from the ORIGINAL text, so its exact phrasing usually won't
@@ -1210,7 +1345,9 @@ xpop.addEventListener('mouseleave', hideX);
     return false;
   }
   function unwrapDef(id){
-    document.querySelectorAll('mark.def-highlight[data-def="'+id+'"]').forEach(m=>{
+    document.querySelectorAll('.def-highlight[data-def="'+id+'"]').forEach(m=>{
+      // an equation carries the def classes on the block itself — strip them, don't unwrap
+      if(m.tagName!=='MARK'){ m.classList.remove('def-highlight','pending'); delete m.dataset.def; return; }
       const p=m.parentNode; if(!p) return; while(m.firstChild) p.insertBefore(m.firstChild, m); p.removeChild(m); p.normalize&&p.normalize();
     });
   }
@@ -1253,7 +1390,7 @@ xpop.addEventListener('mouseleave', hideX);
     } else {
       src='<span class="dp-badge">🧠 From general knowledge</span><span class="dp-note">— not defined in this paper</span>';
     }
-    defpop.innerHTML='<div class="dp-term">'+esc(rec.term||'')+'</div>'
+    defpop.innerHTML='<div class="dp-term">'+mdLite(rec.term||'')+'</div>'
       +'<div class="dp-def">'+mdLite(rec.definition||'')+'</div><div class="dp-src">'+src+'</div>';
     const jump=defpop.querySelector('.dp-jump');
     if(jump) jump.onclick=(ev)=>{ ev.preventDefault();
@@ -1268,20 +1405,20 @@ xpop.addEventListener('mouseleave', hideX);
   function hideDefPopup(){ defpop.classList.remove('show'); }
   // hover a defined term → show its definition (every time)
   mainEl.addEventListener('mouseover', e=>{
-    const m=e.target.closest && e.target.closest('mark.def-highlight');
+    const m=e.target.closest && e.target.closest('.def-highlight');
     if(m && m.dataset.def && defs[m.dataset.def]){ clearTimeout(defHideT); renderDefPopup(defs[m.dataset.def], m); }
   });
   mainEl.addEventListener('mouseout', e=>{
-    if(e.target.closest && e.target.closest('mark.def-highlight')){ clearTimeout(defHideT); defHideT=setTimeout(hideDefPopup, 240); }
+    if(e.target.closest && e.target.closest('.def-highlight')){ clearTimeout(defHideT); defHideT=setTimeout(hideDefPopup, 240); }
   });
   defpop.addEventListener('mouseenter', ()=>clearTimeout(defHideT));
   defpop.addEventListener('mouseleave', hideDefPopup);
-  document.addEventListener('mousedown', e=>{ if(!defpop.contains(e.target) && !(e.target.closest&&e.target.closest('mark.def-highlight'))) hideDefPopup(); });
+  document.addEventListener('mousedown', e=>{ if(!defpop.contains(e.target) && !(e.target.closest&&e.target.closest('.def-highlight'))) hideDefPopup(); });
   // select text → Define: draw a pending highlight, stream the lookup, then persist + show.
   async function doDefine(anchor, ctxText){
     const pend='pending-'+newId();
     applyAnchor(anchor, 'def-highlight pending', {def: pend});
-    const pmark=()=>document.querySelector('mark.def-highlight[data-def="'+pend+'"]');
+    const pmark=()=>document.querySelector('.def-highlight[data-def="'+pend+'"]');
     showDefLoading(pmark());
     try{
       const res=await fetch('__chat/define', {method:'POST', headers:{'content-type':'application/json'},
@@ -1301,14 +1438,15 @@ xpop.addEventListener('mouseleave', hideX);
       }
       if(!result || result.error){ unwrapDef(pend); hideDefPopup(); return; }
       // finalize: swap the pending id for the real one, cache, render
-      document.querySelectorAll('mark.def-highlight[data-def="'+pend+'"]').forEach(m=>{ m.classList.remove('pending'); m.dataset.def=result.id; });
+      document.querySelectorAll('.def-highlight[data-def="'+pend+'"]').forEach(m=>{ m.classList.remove('pending'); m.dataset.def=result.id; });
       defs[result.id]=result;
-      renderDefPopup(result, document.querySelector('mark.def-highlight[data-def="'+result.id+'"]'));
+      renderDefPopup(result, document.querySelector('.def-highlight[data-def="'+result.id+'"]'));
     }catch(err){ unwrapDef(pend); hideDefPopup(); }
   }
   mainEl.addEventListener('mouseup', ()=>{
     if(!serverUp) return;
     setTimeout(()=>{
+      if(mathSel) return;   // an equation was just clicked — its bubble is up; don't hide it
       const sel=window.getSelection();
       if(!sel||sel.isCollapsed||!sel.rangeCount){ hideBubble(); return; }
       const range=sel.getRangeAt(0);
@@ -1323,9 +1461,38 @@ xpop.addEventListener('mouseleave', hideX);
     }, 1);
   });
   document.addEventListener('mousedown', e=>{ if(!bubble.contains(e.target)) hideBubble(); });
+  // click a display equation → the same bubble, but acting on its LaTeX source (Ask / Define).
+  // Handing Claude data-tex beats a text selection: the SVG isn't selectable, and even if it
+  // were, the model gets a clean `\mathbf{W}x` instead of mangled unicode.
+  function showMathBubble(eq){
+    mathSel={tex:eq.dataset.tex, eqId:eq.id||null,
+             sectionId:(eq.closest('section[id]')||{}).id||null, eqEl:eq};
+    selRange=null;
+    bubble.classList.add('show','math');
+    const r=eq.getBoundingClientRect(), bw=bubble.offsetWidth, bh=bubble.offsetHeight;
+    let left=Math.max(8, Math.min(r.left+r.width/2-bw/2, window.innerWidth-bw-8))+window.scrollX;
+    let top=r.top-bh-8; if(top<4) top=r.bottom+8;
+    bubble.style.left=left+'px'; bubble.style.top=(top+window.scrollY)+'px';
+  }
+  mainEl.addEventListener('click', e=>{
+    if(!serverUp) return;
+    const eq=e.target.closest && e.target.closest('.equation');
+    if(!eq || !eq.dataset.tex) return;
+    if(eq.classList.contains('q-highlight') && eq.dataset.thread) return;   // reopen handler takes it
+    if(window.getSelection && !window.getSelection().isCollapsed) return;    // mid-selection, ignore
+    showMathBubble(eq);
+  });
   bubble.querySelectorAll('button').forEach(b=>{
     b.addEventListener('mousedown', e=>e.preventDefault());
     b.addEventListener('click', ()=>{
+      if(mathSel && !selRange){                       // acting on a clicked equation
+        const anchor={quote:'$$'+mathSel.tex+'$$', sectionId:mathSel.sectionId||null, eqId:mathSel.eqId||null};
+        const ctxText=equationContext(mathSel.eqEl);   // capture before hideBubble clears mathSel
+        hideBubble();
+        if(b.dataset.act==='define'){ doDefine(anchor, ctxText); return; }
+        const tid=newId(); open(); startThread(tid, anchor); setTimeout(()=>input.focus(),60);
+        return;
+      }
       if(!selRange) return;
       const anchor=anchorFor(selRange);
       const ctxText=paragraphContext(selRange);
@@ -1341,7 +1508,7 @@ xpop.addEventListener('mouseleave', hideX);
   });
   // click a highlight → reopen its thread
   document.addEventListener('click', e=>{
-    const m=e.target.closest && e.target.closest('mark.q-highlight');
+    const m=e.target.closest && e.target.closest('.q-highlight');
     if(m && m.dataset.thread){ e.preventDefault(); open(); setActive(m.dataset.thread); }
   });
   // hover a chat highlight → a concise, informal summary of that thread (+ a conclusion if any)
@@ -1361,11 +1528,11 @@ xpop.addEventListener('mouseleave', hideX);
     typesetMath(threadpop).then(()=>{ if(threadpop.classList.contains('show')) placePop(threadpop, mark); });
   }
   mainEl.addEventListener('mouseover', e=>{
-    const m=e.target.closest && e.target.closest('mark.q-highlight');
+    const m=e.target.closest && e.target.closest('.q-highlight');
     if(m && m.dataset.thread){ clearTimeout(tpTimer); tpTimer=setTimeout(()=>showThreadPop(m), 380); }
   });
   mainEl.addEventListener('mouseout', e=>{
-    if(e.target.closest && e.target.closest('mark.q-highlight')){ clearTimeout(tpTimer); tpTimer=setTimeout(hideThreadPop, 260); }
+    if(e.target.closest && e.target.closest('.q-highlight')){ clearTimeout(tpTimer); tpTimer=setTimeout(hideThreadPop, 260); }
   });
   threadpop.addEventListener('mouseenter', ()=>clearTimeout(tpTimer));
   threadpop.addEventListener('mouseleave', hideThreadPop);
@@ -1383,7 +1550,7 @@ xpop.addEventListener('mouseleave', hideX);
     addMsg('user', text || (kind==='rewrite' ? 'Rewrite this for clarity' : '(about the highlighted passage)'));
     // Draw the passage highlight NOW (a chat is actually being started), not on mere
     // selection — and only once per thread.
-    if (anchor && !document.querySelector('mark.q-highlight[data-thread="'+cur+'"]')) applyAnchor(anchor, 'q-highlight', {thread: cur});
+    if (anchor && !document.querySelector('.q-highlight[data-thread="'+cur+'"]')) applyAnchor(anchor, 'q-highlight', {thread: cur});
     input.value=''; input.style.height='auto'; input.placeholder='Ask about the paper…';
     // The bot bubble is created lazily on the first token of the answer. Until then —
     // and in the gaps between tool calls — a status pill shows what the agent is doing
