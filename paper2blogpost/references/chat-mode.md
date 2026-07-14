@@ -72,6 +72,10 @@ command from a `systemd --user` service or a login script instead.
   default is **Sonnet** / medium (the last-used choice is remembered in localStorage).
 - **🌐 Web toggle** — off runs a pure grounded chat (`--tools ""`, fast); on gives
   Claude `WebSearch`/`WebFetch` so it can look things up. Remembered in localStorage.
+  **Both flags are required**: `--tools` only makes a tool *available*, while
+  `--allowedTools` *grants permission* to run it. With only `--tools`, a headless `-p` run
+  has no way to approve the call, so it's denied and the reply is "I need permission to
+  search the web" — the toggle looks on but nothing searches. The server passes both.
 - **Multiple chats** — `＋` starts a new thread; `☰` lists every chat opened in this
   paper (with a `passage`/`rewrite` badge) to switch between them, and a **← Back to
   current chat** row returns you to the one you were in without picking another (the

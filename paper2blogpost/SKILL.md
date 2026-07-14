@@ -167,10 +167,15 @@ For each section, following `references/authoring.md`:
   foundations = teal, commentary = grey); proofs use `.proofbox` + a ∎. Reproduce the
   statement faithfully (it's formal content); gloss it colloquially *around* the box, not
   inside. See `references/authoring.md`.
-- **Wire up cross-references.** When the text says "Figure 3", "Eq. 1", "Table 2",
-  wrap that mention in `<a class="xref" data-target="figure-3">…</a>` so the reader
-  can hover to preview it and click to jump. This is a big part of what makes the
-  post navigable. See `references/authoring.md`.
+- **Wire up cross-references — formal statements and forward refs included.** Every
+  numbered mention — "Figure 3", "Eq. 1", "Table 2", **and "Theorem 4", "Definition 2",
+  "Lemma 3"** — becomes `<a class="xref" data-target="<id>">…</a>`. Formal statements are
+  the ones most often dropped. Derive the id by the fixed rule (Theorem 4 → `thm-4`,
+  Definition 2.1 → `def-2-1`) so you can link a statement **even when its box comes later
+  in the post** — never skip a forward reference. Re-scan each finished section and confirm
+  every numbered mention got linked (same discipline as citations). See
+  `references/authoring.md`. (The assembler auto-links stragglers whose target id exists,
+  but only what you gave an id — so still do it.)
 - Use a "Key idea" callout at most once per section, only for a genuine takeaway.
 
 ### 3. Figures: same image, friendlier caption
@@ -240,8 +245,10 @@ Open the assembled `index.html` and verify against the promises:
 - **References:** every citation resolves to a card; the bibliography is complete;
   clicking "What is it about?" either shows a cached summary or prompts for an API
   key then generates one (test once with a key if you have one).
-- **Cross-references:** hovering a "Figure N"/"Eq. N"/"Table N" link previews the
-  target; clicking scrolls to it.
+- **Cross-references:** every numbered mention — figures, equations, tables, **and
+  theorems / definitions / lemmas / propositions** — is a live `xref` link (hover previews,
+  click jumps), including forward references. Spot-check that a "Theorem N"/"Definition N"
+  in the prose actually links to its box, not just the figures.
 - **Navigation:** TOC links scroll smoothly and highlight the active section;
   progress bar moves; dark mode works; equations render.
 - **Content fidelity:** spot-check a section against the original — nothing

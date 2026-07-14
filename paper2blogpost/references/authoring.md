@@ -165,8 +165,11 @@ template styles them as a colored left rule + a bold label; the *class* picks th
     `conjecture`, `fact`
   - *foundations* → teal: `definition`, `assumption`
   - *commentary* → muted grey: `remark`, `example`, `note`, `observation`
-- **Number it as the paper does** (`Theorem 2.1`) and give it an `id` (`thm-2-1`, `def-1-3`,
-  …) so `<a class="xref" data-target="thm-2-1">Theorem 2.1</a>` mentions hover + jump to it.
+- **Number it as the paper does** (`Theorem 2.1`) and **always give it an `id` by the fixed
+  rule** (`thm-2-1`, `def-3`, `lem-5`; see the prefix table under Cross-references) — every
+  box gets one even if nothing links to it yet, because a mention elsewhere (or in a later
+  section) will, and the id must match. Then `<a class="xref" data-target="thm-2-1">Theorem
+  2.1</a>` mentions hover + jump to it.
 - The optional `<span class="thm-name">(Soundness)</span>` holds the named title some
   statements carry.
 - **The statement is formal content — reproduce it faithfully, notation and all** (see the
@@ -182,24 +185,59 @@ Proofs get a lighter treatment — a run-in *Proof.* and a ∎ to close:
 </div>
 ```
 
-## Cross-references — make "see Figure 3" come alive
+## Cross-references — link EVERY numbered mention (figures, math, AND statements)
 
-A scientific paper is a web of "as shown in Figure 2", "(Eq. 1)", "see Table 3".
-In the blog post, wrap each such in-text mention in an `<a class="xref">` pointing
-at the element's id. On hover the reader gets a little preview of the actual
-figure / equation / table; clicking jumps them to it. This is what makes the post
-*navigable* instead of a wall you scroll blindly:
+A scientific paper is a web of "as shown in Figure 2", "(Eq. 1)", "see Table 3", "by
+Theorem 4", "recall Definition 2". Wrap **every** in-text mention of a numbered object in
+an `<a class="xref">` pointing at that object's id — on hover the reader previews it,
+clicking jumps to it. This is what makes the post navigable, and it's the single most
+under-done step, so be deliberate.
+
+**Formal statements count just as much as figures/equations/tables** — Theorem, Lemma,
+Proposition, Corollary, Definition, Assumption, Remark, Example, Claim, Conjecture,
+Algorithm. These are the ones most often missed. Don't.
 
 ```html
-…the full pipeline is laid out in <a class="xref" data-target="figure-1">Figure 1</a>,
-and the scoring rule is just <a class="xref" data-target="eq-1">Equation 1</a>.
-…performance numbers are in <a class="xref" data-target="table-1">Table 1</a>.
+…which is exactly what <a class="xref" data-target="thm-4">Theorem 4</a> guarantees.
+…recall <a class="xref" data-target="def-2">Definition 2</a>, and the bound in
+<a class="xref" data-target="lem-3">Lemma 3</a>.
+…the pipeline is laid out in <a class="xref" data-target="figure-1">Figure 1</a>, the
+scoring rule is <a class="xref" data-target="eq-1">Equation 1</a>, numbers in
+<a class="xref" data-target="table-1">Table 1</a>.
 ```
 
-The `data-target` must match the `id` of a `<figure>`, a `<div class="equation">`,
-a `<div class="table-wrap">`, a `<div class="thmbox">`, or a footnote (below) somewhere
-in the post. Only wrap genuine references to a specific numbered object — don't turn
-every word into a link.
+**Derive the id deterministically from the paper's own label** — a fixed prefix per
+environment, then the number with dots turned to hyphens. Using these *exact* prefixes is
+what lets a mention's `data-target` and its box's `id` always match (and what lets you link
+a statement before its box is written):
+
+| Kind | id | | Kind | id |
+|---|---|---|---|---|
+| Theorem 4 | `thm-4` | | Definition 2.1 | `def-2-1` |
+| Lemma 3 | `lem-3` | | Assumption 1 | `assum-1` |
+| Proposition 5 | `prop-5` | | Remark 2 | `rem-2` |
+| Corollary 6 | `cor-6` | | Example 3 | `ex-3` |
+| Claim 1 | `claim-1` | | Figure 2 | `figure-2` |
+| Conjecture 1 | `conj-1` | | Equation 1 | `eq-1` |
+| Fact 1 | `fact-1` | | Table 1 · Algorithm 1 | `table-1` · `algorithm-1` |
+
+**Link forward references too.** Because you translate section by section, you'll often
+mention a statement whose box comes *later* ("we prove this as Theorem 12"). Link it
+anyway — the id is deterministic, so `data-target="thm-12"` resolves the moment you write
+that box. **Never skip a link just because the target isn't written yet.**
+
+The `data-target` must match the `id` of a `<figure>`, `<div class="equation">`,
+`<div class="table-wrap">`, `<div class="thmbox">`, or a footnote (below). Only wrap genuine
+references to a specific numbered object — don't turn every word into a link.
+
+**Self-check (like citations): when you finish a section, re-scan it** for every
+"Figure / Eq. / Table / Theorem / Definition / Lemma / Proposition / Corollary … N" you
+wrote and confirm each is wrapped in an `<a class="xref">`.
+
+> The assembler also runs a deterministic auto-linker at build time that wraps mentions you
+> missed **when the target id exists** (same prefixes as the table). It's a safety net, not
+> a license to skip — it can only link statements you actually gave an `id`, and only
+> matches the exact numbering, so do your part and let it catch the stragglers.
 
 ## Footnotes — small, placed near their reference
 

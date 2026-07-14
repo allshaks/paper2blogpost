@@ -213,7 +213,10 @@ figure figcaption .orig-cap{display:block; margin-top:8px; font-size:13px; font-
   background:var(--accent-soft); border-radius:6px; padding:1px 8px; margin-right:8px; font-size:13px}
 
 /* ---- equations ---- */
-.mjx-container{overflow-x:auto; overflow-y:hidden; max-width:100%}
+/* MathJax renders into a <mjx-container> custom ELEMENT (tag), not a .mjx-container class —
+   use the tag selector so wide display math scrolls inside its own box instead of pushing
+   the page body sideways on narrow viewports. */
+mjx-container{overflow-x:auto; overflow-y:hidden; max-width:100%}
 
 /* ---- prompt / quoted-text boxes (verbatim prompts from the paper) ---- */
 blockquote.prompt-box{

@@ -266,14 +266,23 @@ class Ctx:
 
         The internet toggle maps to the built-in tool set: off => no tools (pure,
         fast, grounded chat); on => just the web tools so Claude can look things up.
+        Web access needs BOTH --tools (makes them available) and --allowedTools (grants
+        permission) — with only the former, headless runs get denied at call time.
         Effort is dropped for Haiku, which doesn't accept it.
         """
         m = model or self.model
+        tools = "WebSearch,WebFetch" if internet else ""
         cmd = ["claude", "-p", message,
                "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                "--append-system-prompt", PERSONA,
-               "--tools", ("WebSearch,WebFetch" if internet else "")]
+               "--tools", tools]
+        # --tools only makes a tool AVAILABLE; it does NOT grant permission to run it. In
+        # headless -p there's no prompt to approve one, so the call is denied and the model
+        # says "I need permission to search the web". --allowedTools pre-approves exactly
+        # these two, so the web toggle (and Define's reference tier) actually work.
+        if tools:
+            cmd += ["--allowedTools", tools]
         if m:
             cmd += ["--model", m]
         if effort and not (m and "haiku" in m.lower()):

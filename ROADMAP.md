@@ -4,6 +4,35 @@ Running log of what's shipped and what's queued, so requested features don't get
 
 ## Shipped
 
+- **Fix: the 🌐 Web toggle never actually searched** (2026-07-02): the server passed
+  `--tools "WebSearch,WebFetch"`, which only makes a tool **available** — it does *not*
+  grant permission to run it. In headless `-p` there's no prompt to approve the call, so it
+  was denied and the model replied *"I need permission to search the web."* The toggle
+  looked on; nothing searched. Fix: also pass **`--allowedTools "WebSearch,WebFetch"`**
+  (pre-approves exactly those two). This silently broke **Define's tier 2** as well — its
+  "follow a nearby citation and define from that reference on the web" step runs with
+  `internet=True`, so it could never reach the web and quietly degraded to the from-memory
+  tier. Reproduced the denial and verified the fix both via the CLI and through the
+  server's own `run_claude` (WebSearch invoked, real sourced answer, no refusal).
+  **Requires `chat-server.py --install` to take effect** (the LaunchAgent runs a copy).
+- **Cross-reference auto-linker + stricter linking rules** (2026-07-02): posts were missing
+  internal links — prose said "Theorem 20" / "Definition 3" without linking to the box.
+  Root cause was examples-bias: every cross-ref example in `SKILL.md`/`authoring.md` named
+  only Figure/Eq./Table, so formal statements read as ordinary prose; there was no
+  deterministic id rule (making forward references unsafe to write, since the box comes in a
+  later section), and no cross-ref self-check. Fixes: (1) `assemble.py` gained a
+  deterministic **auto-linker** that wraps any unlinked "Kind N" mention **when its target
+  id exists** — guarded so it never touches attributes (`alt="Figure 2"`), a box's own
+  label, headings, code, or existing links; tolerant of both `lem-`/`lemma-` id styles;
+  idempotent; runs on `--upgrade` too, so old posts get retro-fixed. (2) `authoring.md` +
+  `SKILL.md` now lead with formal-statement examples, a **deterministic id table**
+  (Theorem 4 → `thm-4`, Definition 2.1 → `def-2-1`), an explicit **"link forward references
+  too"** rule, and a cross-ref self-check mirroring the citation one. Measured honestly on
+  the causal post: the model already linked 18/21 (86%) of formal refs that *have* a box;
+  the auto-linker closes the remaining 3 to 100% (browser-verified: an auto-added
+  "Theorem 20" link hover-previews its box). 23 further mentions point at statements the
+  model never boxed — unlinkable by any post-pass; that's what the stricter "box every
+  statement, give it an id" rule targets.
 - **Reference summaries cached per-reference, not per-citation** (2026-07-02): "What is
   it about?" used to key its *whole* cached blob (summary + relevance) by the citation's
   surrounding passage — so the same work cited in N places re-ran the full web-search

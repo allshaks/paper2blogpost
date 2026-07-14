@@ -41,6 +41,82 @@ H2_RE = re.compile(r"<h2[^>]*>(.*?)</h2>", re.IGNORECASE | re.DOTALL)
 TAG_RE = re.compile(r"<[^>]+>")
 PLACEHOLDER_RE = re.compile(r"\{\{[A-Z_]+\}\}")
 
+# ---- cross-reference auto-linker -------------------------------------------------
+# The model is unreliable at wrapping in-text mentions ("Theorem 20", "Definition 3")
+# in <a class="xref">, especially for formal statements and forward references (whose
+# target box is written in a later section). So after stitching we do it deterministically:
+# wrap every unlinked "Kind N" mention whose target id actually exists in the article.
+# Guards: it never touches text inside a tag/attribute, an existing <a>, a heading, code,
+# or a box's own label (so it can't self-link or corrupt markup); and it only links when
+# the derived id is really present, so a stray "Table 9" with no table-9 stays plain.
+#
+# Each kind maps to the id-prefixes to TRY, canonical (abbreviated) form first — the one
+# authoring.md tells the model to use — then the full word, since generated ids vary in
+# practice (some posts write `lemma-2`/`example-6`, others `lem-2`/`ex-6`). We link to the
+# first candidate id that actually exists, so the linker is robust to either convention.
+XREF_PREFIXES = {
+    'theorem': ['thm', 'theorem'], 'thm': ['thm', 'theorem'],
+    'lemma': ['lem', 'lemma'], 'lem': ['lem', 'lemma'],
+    'proposition': ['prop', 'proposition'], 'prop': ['prop', 'proposition'],
+    'corollary': ['cor', 'corollary'], 'cor': ['cor', 'corollary'],
+    'definition': ['def', 'definition'], 'def': ['def', 'definition'],
+    'assumption': ['assum', 'assumption', 'asm'],
+    'claim': ['claim'], 'conjecture': ['conj', 'conjecture'], 'fact': ['fact'],
+    'remark': ['rem', 'remark'], 'example': ['ex', 'example', 'eg'],
+    'note': ['note'], 'observation': ['obs', 'observation'],
+    'figure': ['figure', 'fig'], 'fig': ['figure', 'fig'],
+    'equation': ['eq', 'equation'], 'eq': ['eq', 'equation'], 'eqn': ['eq', 'equation'],
+    'table': ['table', 'tbl'], 'algorithm': ['algorithm', 'alg'], 'alg': ['algorithm', 'alg'],
+}
+# Regions to copy through verbatim (never link inside them). Ordered: whole protected
+# blocks first, then any single tag (so attribute text like alt="Figure 2" is untouched).
+_XREF_PROTECT = re.compile(
+    r'<a\b[^>]*>.*?</a>'                                             # existing links
+    r'|<(h[1-6])\b[^>]*>.*?</\1>'                                    # headings
+    r'|<(code|pre|script|style)\b[^>]*>.*?</\2>'                     # code / scripts
+    r'|<span\b[^>]*\bclass="[^"]*\b(?:thm-label|figlabel)\b[^"]*"[^>]*>.*?</span>'  # a box/figure's own label
+    r'|<[^>]+>',                                                     # any other single tag
+    re.DOTALL | re.IGNORECASE)
+# Case-SENSITIVE, capitalized kind (so lowercase prose like "figure out" / "note 3 things"
+# is left alone) + a number (dotted numbering allowed, optional trailing sub-letter).
+_XREF_MENTION = re.compile(
+    r'\b(Theorem|Thm\.?|Lemma|Lem\.?|Proposition|Prop\.?|Corollary|Cor\.?|Definition|Def\.?'
+    r'|Assumption|Claim|Conjecture|Fact|Remark|Example|Note|Observation'
+    r'|Figure|Fig\.?|Equation|Eq\.?|Eqn\.?|Table|Algorithm|Alg\.?)\s+(\d+(?:\.\d+)*[a-z]?)\b')
+
+
+def autolink_xrefs(content: str):
+    """Wrap unlinked 'Kind N' mentions in <a class="xref"> when the target id exists in the
+    article. Returns (new_content, count). Idempotent (skips existing <a>)."""
+    idset = set(re.findall(r'\bid="([^"]+)"', content))
+    if not idset:
+        return content, 0
+    added = [0]
+
+    def wrap(m):
+        cands = XREF_PREFIXES.get(m.group(1).rstrip('.').lower())
+        if not cands:
+            return m.group(0)
+        num = m.group(2).replace('.', '-')
+        for p in cands:
+            tid = f'{p}-{num}'
+            if tid in idset:                        # first existing target wins
+                added[0] += 1
+                return f'<a class="xref" data-target="{tid}">{m.group(0)}</a>'
+        return m.group(0)                           # no such target -> leave the text plain
+
+    out, last = [], 0
+    for mo in _XREF_PROTECT.finditer(content):
+        gap = content[last:mo.start()]              # plain text between protected regions
+        if gap:
+            out.append(_XREF_MENTION.sub(wrap, gap))
+        out.append(mo.group(0))                     # protected region / tag: verbatim
+        last = mo.end()
+    tail = content[last:]
+    if tail:
+        out.append(_XREF_MENTION.sub(wrap, tail))
+    return ''.join(out), added[0]
+
 
 def default_template() -> Path:
     return Path(__file__).resolve().parent.parent / "assets" / "template.html"
@@ -91,6 +167,8 @@ def build_post(build: Path, template_path: Path, out: Path, mode: str = None):
     paper_id = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:60] or "paper"
     paper_data = {"title": title, "id": paper_id}
 
+    content, nlinks = autolink_xrefs("\n".join(content_parts))   # wrap missed "Theorem N"/… mentions
+
     out_html = fill(template, {
         "{{BODY_CLASS}}": body_class,
         "{{TITLE}}": title,
@@ -98,7 +176,7 @@ def build_post(build: Path, template_path: Path, out: Path, mode: str = None):
         "{{DEK}}": meta.get("dek", ""),
         "{{META}}": meta.get("meta_html", ""),
         "{{TOC}}": "\n".join(toc_parts),
-        "{{CONTENT}}": "\n".join(content_parts),
+        "{{CONTENT}}": content,
         "{{REFERENCES_LIST}}": ref_list,
         "{{REFS_DATA}}": json.dumps(refs_data, ensure_ascii=False).replace("</", "<\\/"),
         "{{PAPER_DATA}}": json.dumps(paper_data, ensure_ascii=False).replace("</", "<\\/"),
@@ -120,7 +198,7 @@ def build_post(build: Path, template_path: Path, out: Path, mode: str = None):
 
     referenced = set(re.findall(r'<img[^>]+src=["\'](figures/[^"\']+)["\']', out_html))
     print(f"Wrote {out}  [{mode}]  ({len(section_files)} sections, {len(refs_data)} refs, "
-          f"{len(referenced)} figures referenced"
+          f"{len(referenced)} figures referenced, {nlinks} cross-ref links auto-added"
           f"{'; chat grounded' if grounded else '; no build/text/full.txt → chat ungrounded'}).")
 
 
@@ -167,6 +245,11 @@ def upgrade_post(target: str, template_path: Path):
         raise SystemExit(f"Couldn't extract {', '.join(missing)} from {index}. "
                          "Is it a post assembled by this skill? (Nothing was changed.)")
 
+    # retro-fix missed internal links on the extracted article (idempotent — skips existing <a>)
+    nlinks = 0
+    if fields.get("{{CONTENT}}"):
+        fields["{{CONTENT}}"], nlinks = autolink_xrefs(fields["{{CONTENT}}"])
+
     new_html = fill(template_path.read_text(), {k: v for k, v in fields.items() if v is not None})
     leftover = sorted(set(PLACEHOLDER_RE.findall(new_html)))
 
@@ -182,6 +265,7 @@ def upgrade_post(target: str, template_path: Path):
     print(f"Upgraded {index}")
     print(f"  re-skinned to {template_path}")
     print(f"  carried over: {ntoc} TOC entries, {nrefs} references, and the full article + hero + meta")
+    print(f"  auto-added {nlinks} internal cross-ref links (Theorem/Definition/Figure/… mentions)")
     print(f"  backup of the old post: {backup}")
     if leftover:
         print(f"  ⚠ the new template has placeholders the old post didn't provide: {', '.join(leftover)} "
